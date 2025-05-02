@@ -11,7 +11,7 @@ This pipeline is designed for automated, end-to-end quality control (QC) and ana
 
 
 ### Citation
-Work-in-progress
+Zeng Y, Bahl S, Xu X, Ci X, Keshavarzian T, Yang L, et al. iSHARC: Integrating scMultiome data for heterogeneity and regulatory analysis in cancer. bioRxiv 2025. https://doi.org/10.1101/2025.04.28.651068.
 
 
 ### How it works

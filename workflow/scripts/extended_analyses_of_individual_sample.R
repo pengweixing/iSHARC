@@ -46,6 +46,25 @@ pipe_dir <- args$pipe_dir
 
 ## output dir
 out_dir <- paste0(getwd(), "/individual_samples/", sample_id, "/") ## with forward slash at the end
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+
+## debug log
+log_path <- paste0(out_dir, sample_id, "_extended_analyses_debug.log")
+log_step <- function(msg) {
+  cat(format(Sys.time(), "%Y-%m-%d %H:%M:%S"), " | ", msg, "\n",
+      file = log_path, append = TRUE)
+}
+log_step("Script start")
+
+options(error = function() {
+  log_step("ERROR encountered. Dumping traceback.")
+  log_step(paste0("Last error message: ", geterrmessage()))
+  tb <- utils::capture.output(traceback())
+  if (length(tb) > 0) {
+    cat(paste(tb, collapse = "\n"), "\n", file = log_path, append = TRUE)
+  }
+  quit(status = 1)
+})
 
 }
 
@@ -53,7 +72,7 @@ out_dir <- paste0(getwd(), "/individual_samples/", sample_id, "/") ## with forwa
 ############################
 ### loading required packages
 #############################
-{
+log_step("Loading required packages")
 suppressMessages(library(Seurat))
 suppressMessages(library(Signac))
 suppressMessages(library(SingleR))
@@ -67,7 +86,6 @@ suppressMessages(library(tidygraph))
 suppressMessages(library(tidyverse))
 suppressMessages(library(ggplot2))
 suppressMessages(library(ggraph))
-suppressMessages(library(devtools))
 suppressMessages(library(TFBSTools))
 
 ## enable the Parallelization with the future packages
@@ -82,61 +100,75 @@ options(future.globals.maxSize = args$future_globals_maxSize * 1024^3)
 ##
 ## loading the KEGG.db from the local, since it will be problematic for clusterProfiler's defaultst KEGG analysis require internet access
 ## https://github.com/YuLab-SMU/createKEGGdb/tree/master
-if(!require("KEGG.db"))  install.packages(paste0(pipe_dir, "/workflow/dependencies/KEGG.db_1.0.tar.gz"))
 library(KEGG.db)
-
 ## install "dlm", which is required for copykat
-if(!require("dlm"))  install.packages(paste0(pipe_dir, "/workflow/dependencies/dlm_1.1-6.tar.gz"))
 library(dlm)
-
-## load copykat (v1.1.0)
-if(!require("copykat"))  devtools::load_all(paste0(pipe_dir, "/workflow/dependencies/copykat"))
 library(copykat)
-
 ## load Pando
 ## require seuratObject < 5.0.0;
-if(!require("Pando"))  install.packages(paste0(pipe_dir, "/workflow/dependencies/Pando_1.0.4.tar.gz"))  ## latest compatible verion
 library(Pando)
-
 suppressMessages(library(doParallel))       ## parallelization for pando
 
-
-## intall TFBSTools from local instead
-#if(!require("TFBSTools"))  install.packages(paste0(pipe_dir, "/workflow/dependencies/TFBSTools_1.44.0.tar.gz"), INSTALL_opts = '--no-lock')
-#library(TFBSTools)
-
-}
+log_step("Packages loaded; sessionInfo below")
+si <- utils::capture.output(sessionInfo())
+cat(paste(si, collapse = "\n"), "\n", file = log_path, append = TRUE)
 
 
 ##############################################################
 ## annotating the cell clusters with integrated ATAC and RNA
 ##############################################################
-{
+log_step("Reading vertically integrated Seurat object")
 ## readin vertically integrated seurat object
 scMultiome <- readRDS(vio_file)
 
 ## ensure the active.ident is WNN_Clusters
-scMultiome  <- SetIdent(scMultiome , value = scMultiome @meta.data$WNN_clusters)
+scMultiome  <- SetIdent(scMultiome , value = scMultiome@meta.data$WNN_clusters)
 
 ##############################################################
 ## auto annotation using publicly available reference datasets
-{
+log_step("Loading BlueprintEncodeData reference")
 ## anno_ref <-  BlueprintEncodeData()       ## form package celldex, internet required
-ref_rds <- paste0(pipe_dir, "/workflow/dependencies/BlueprintEncodeData.RDS")
-anno_ref <- readRDS(ref_rds)
+ref_rds_candidates <- c("/data/BlueprintEncodeData.RDS")
+
+log_step(paste0("Checking reference paths: ", paste(ref_rds_candidates, collapse = ", ")))
+if (dir.exists("/data")) {
+  log_step(paste0("Contents of /data: ", paste(list.files("/data"), collapse = ", ")))
+} else {
+  log_step("/data does not exist")
+}
+ref_rds <- ref_rds_candidates[file.exists(ref_rds_candidates)][1]
+if (is.na(ref_rds) || !nzchar(ref_rds)) {
+  stop(
+    "Cannot find BlueprintEncodeData.RDS. Checked: ",
+    paste(ref_rds_candidates, collapse = ", ")
+  )
+}
+log_step(paste0("Reading reference RDS: ", ref_rds))
+fi <- tryCatch(file.info(ref_rds), error = function(e) NULL)
+if (!is.null(fi)) {
+  log_step(paste0("Reference file size: ", fi$size, " bytes"))
+}
+anno_ref <- tryCatch(
+  readRDS(ref_rds),
+  error = function(e) {
+    log_step(paste0("ERROR reading reference RDS: ", conditionMessage(e)))
+    log_step(paste0("ERROR class: ", paste(class(e), collapse = ", ")))
+    stop(e)
+  }
+)
+log_step("Reference RDS loaded successfully")
 
 ## fetch SCT normalized GEX matrix
-expr <- GetAssayData(object = scMultiome, assay = "SCT", slot = "data")
+expr <- GetAssayData(object = scMultiome, assay = "SCT", layer = "data")
 
 ### using ENCODE
 expr_anno <- SingleR(test = expr, ref = anno_ref, labels = anno_ref$label.main, clusters =  Idents(scMultiome))
 
 ## match cluster labels and annotated labels
-idx_m <- match(Idents(scMultiome), rownames(expr_anno))
+  idx_m <- match(Idents(scMultiome), rownames(expr_anno))
 
 ## add labels scMultiome object
 scMultiome[["WNN_clusters_singler_annot"]] <- expr_anno$labels[idx_m]
-}
 
 ############################################################
 ## Distinguish the tumor cells from the normal cells
@@ -144,9 +176,10 @@ if(TRUE){
 ## Using copyKAT  to predicts tumor and normal cells
 ## RNA-seq data based
 
+old_wd <- getwd()
 setwd(out_dir)                                     ## ensure output copykat related results to desired folder
 
-expr_raw <- as.matrix(scMultiome@assays$RNA@counts)
+expr_raw <- as.matrix(GetAssayData(object = scMultiome, assay = "RNA", layer = "counts"))
 
 copykat_res <- copykat(rawmat = expr_raw, sam.name = sample_id , id.type = "S", ngene.chr = 5, win.size = 25,
                         KS.cut = 0.1,  distance = "euclidean", norm.cell.names = "", output.seg = "FLASE",
@@ -161,11 +194,10 @@ cell_type[!is.na(idx_s)] <- copykat_res$prediction$copykat.pred[idx_s[!is.na(idx
 
 scMultiome[["WNN_clusters_copykat_annot"]] <- cell_type
 
-setwd("../../")  ## cd back to workdir
+setwd(old_wd)  ## restore working directory
 }
 
 print("The annotation has been successfully completed!!")
-}
 
 
 ##########################################
@@ -174,57 +206,54 @@ print("The annotation has been successfully completed!!")
 ## results were add to seuratObject@misc
 ########################################
 {
-clusters <- levels(scMultiome)
-L <- length(clusters)
-cluster_cnt <- table(scMultiome$seurat_clusters)
+clusters <- levels(scMultiome@meta.data$WNN_clusters_singler_annot)
+cluster_cnt <- table(clusters)
 
 DefaultAssay(scMultiome) <- "SCT"
-sct_deg <- list()
-sct_deg_names <- vector()
+Idents(scMultiome) <- 'WNN_clusters_singler_annot'
 
-## top 5 degs per clusters
-deg_list <- vector()
+sct_deg   <- vector("list", length = length(clusters))
+deg_list  <- vector("list", length = length(clusters))
+names(sct_deg)  <- clusters
+names(deg_list) <- clusters
 
 ################
 ## Identify DEGs
-for (i in 1:L)
-{
-  if(cluster_cnt[i] <=3 ){
+for (i in clusters) {
+  print(i)
 
-  sct_deg[[i]] <- list()
-
-  } else {
-  ## one vs all others: prefiltering
-  sct_deg[[i]] <- FindMarkers(scMultiome, ident.1 = clusters[i], ident.2 = NULL,
-                              min.pct = 0.5,                ## detected at least 50% frequency in either ident.
-                              logfc.threshold = log(2),     ## at least two-fold change between the average expression of comparisons
-                              min.diff.pct = 0.25,          ## Pre-filter features whose detection percentages across the two groups are similar
-                              )
-
-  #sct_deg_names[i] <- paste0(clusters[i], "_specific")
-  ## select top 5 upregualted degs per clusters
-
-  idx_fc <- sct_deg[[i]][,  2] > 0
-  pval <-   sct_deg[[i]][idx_fc,  1]
-
-    if (length(pval) == 0) {
-      next
-      } else {
-      names(pval) <- rownames(sct_deg[[i]])[idx_fc]
-      pval_s <- sort(pval)
-      idx_g <- min(length(pval_s), 5)
-      deg_list <- c(deg_list, names(pval_s)[1:idx_g])
-      }
+  n_i <- unname(cluster_cnt[i])
+  if (is.na(n_i) || n_i <= 3) {
+    sct_deg[i]   <- list(NULL)       
+    deg_list[[i]] <- character(0)
+    next
   }
+
+  mk <- FindMarkers(
+    scMultiome,
+    ident.1 = i,          
+    ident.2 = NULL,
+    min.pct = 0.5,
+    logfc.threshold = log(2),
+    min.diff.pct = 0.25
+  )
+
+  sct_deg[[i]] <- mk
+
+  mk_up <- mk[mk$avg_log2FC > 0, , drop = FALSE]
+  if (nrow(mk_up) == 0) {
+    deg_list[[i]] <- character(0)
+    next
+  }
+
+  mk_up <- mk_up[order(mk_up$p_val_adj, mk_up$p_val), , drop = FALSE]
+  deg_list[[i]] <- head(rownames(mk_up), 5)
 }
 
-#########################################################
-names(sct_deg) <-  clusters         ##sct_deg_names
+names(sct_deg) <- clusters         ##sct_deg_names
 deg_list <- unique(deg_list)        ## remove duplicates for the top 5 DEGs
-
-## add to assay's Misc of seuratObject: can call by : scMultiome@misc$
-Misc(scMultiome@assays$SCT, slot = "DEGs") <- sct_deg
-Misc(scMultiome@assays$SCT, slot = "DEGs_top5") <- deg_list       ## top5 gene names
+Misc(scMultiome[["SCT"]], slot = "DEGs") <- sct_deg
+Misc(scMultiome[["SCT"]], slot = "DEGs_top5") <- deg_list
 
 #################################################################
 ### Functional enrichment analysis for WNN cluster-specific genes
@@ -289,11 +318,12 @@ if(length(deg_list) > 0) {
 # Show we can sort sub-bars
 #DoHeatmap(scMultiome, features = deg_list, size = 4, angle = 0)
 
-DoMultiBarHeatmap(scMultiome, features = scMultiome@misc$SCT_DEGs_top5, assay = 'SCT',
+options(repr.plot.width = 10)
+DoMultiBarHeatmap(scMultiome, features = features_use, assay = 'SCT',
                   group.by='WNN_clusters_singler_annot', label = FALSE,
-                  additional.group.by = c('WNN_clusters_copykat_annot', "Phase", 'ATAC_clusters',  'RNA_clusters', 'WNN_clusters'),
-                  additional.group.sort.by = c('WNN_clusters'))
-
+                  additional.group.by = c('WNN_clusters_copykat_annot', "Phase", 'ATAC_clusters',  'RNA_clusters', 'WNN_clusters'))
+               #   additional.group.sort.by = c('WNN_clusters_singler_annot'))
+ggsave(paste0(out_dir, sample_id, "_top5_WNN_clusters_specific_DEGs_heatMap.pdf"), width = 16, height = 8.5)
 ggsave(paste0(out_dir, sample_id, "_top5_WNN_clusters_specific_DEGs_heatMap.png"), width = 16, height = 8.5)
 
 
@@ -321,7 +351,6 @@ write.csv(Links(scMultiome), paste0(out_dir, sample_id, "_top5_WNN_clusters_spec
 }
 
 print("The analysis of WNN clusters specific DEGs has been successfully completed!!")
-}
 
 
 ############################################################
@@ -329,7 +358,6 @@ print("The analysis of WNN clusters specific DEGs has been successfully complete
 ## plus one vs other :: cluster markers
 ## results were add to seuratObject@misc
 ############################################################
-{
 
 # motif matrices from the JASPAR database
 pfm <- getMatrixSet(x = JASPAR2020,
@@ -342,7 +370,6 @@ scMultiome <- AddMotifs(object = scMultiome,
 
 ### DARs and motif enrichment
 clusters <- levels(scMultiome)
-L <- length(clusters)
 
 DefaultAssay(scMultiome) <- "ATAC"
 atac_dar <- list()
@@ -352,7 +379,8 @@ enriched_motifs <- vector()     ## top 5 per cluster
 atac_dar_names <- c()
 
 ## identify DARs
-for (i in 1:L)
+## identify DARs
+for (i in clusters)
 {
 
   if(cluster_cnt[i] <=3 ){
@@ -363,7 +391,7 @@ for (i in 1:L)
   } else {
 
   ## one vs all others: prefiltering
-  atac_dar[[i]] <- FindMarkers(scMultiome, ident.1 = clusters[i], ident.2 = NULL,
+  atac_dar[[i]] <- FindMarkers(scMultiome, ident.1 =i , ident.2 = NULL,
                               min.pct = 0.05,                ## detected at least 5% frequency in either ident.
                               logfc.threshold = log(2),     ## at least two-fold change between the average expression of comparisons
                               min.diff.pct = 0.25,          ## Pre-filter features whose detection percentages across the two groups are similar
@@ -393,12 +421,9 @@ for (i in 1:L)
   if(nrow(motif_en) > 0){
     idx_top5 <- min(nrow(motif_en), 5)
     enriched_motifs <- c(enriched_motifs, motif_en$motif.name[1:idx_top5])
+  } 
   }
-
   }
-
-  }
-
 }
 
 names(atac_dar) <- names(atac_dar_motif) <-  clusters
@@ -431,13 +456,13 @@ enriched_motifs <- unique(enriched_motifs)        ## enriched_motif name
 
 }
 
+
 ## unlist(lapply(atac_dar, nrow))
-Misc(scMultiome@assays$ATAC, slot = "DARs") <- atac_dar
-Misc(scMultiome@assays$ATAC, slot = "DARs_motif") <- atac_dar_motif
-Misc(scMultiome@assays$ATAC, slot = "DARs_motif_hm") <- motif_hm
+Misc(scMultiome[['ATAC']], slot = "DARs") <- atac_dar
+Misc(scMultiome[['ATAC']], slot = "DARs_motif") <- atac_dar_motif
+Misc(scMultiome[['ATAC']], slot = "DARs_motif_hm") <- motif_hm
 
 print("The analysis of WNN clusters specific DARs has been successfully completed!!")
-}
 
 ##############################################
 ##  GRN: TF-gene gene regulatory network (GRN)
@@ -459,6 +484,7 @@ data('SCREEN.ccRE.UCSC.hg38')    ## regions are contrained to SCREEN candidate c
 ## regions are contained to SCREEN candidate cREs
 {
   ## combined and unique DEGs
+## combined and unique DEGs
   clusters <- levels(scMultiome)
   L <- length(clusters)
   all_degs <- vector()
@@ -468,7 +494,7 @@ data('SCREEN.ccRE.UCSC.hg38')    ## regions are contrained to SCREEN candidate c
   {
 
     ## limited to cluster specific DEGs
-    all_degs <- c(all_degs, rownames(scMultiome@assays$SCT@misc$DEGs[[i]]))
+    all_degs <- c(all_degs, rownames(scMultiome[['SCT']]@misc$DEGs[[i]]))
   }
   all_degs <- unique(all_degs)
 
@@ -491,10 +517,10 @@ data('SCREEN.ccRE.UCSC.hg38')    ## regions are contrained to SCREEN candidate c
   if(FALSE){
     patterning_genes <- read_tsv('patterning_genes.tsv')
     pattern_tfs <- patterning_genes %>%
-      filter(type=='Transcription factor') %>%
-      pull(symbol)
+      dplyr::filter(type=='Transcription factor') %>%
+      dplyr::pull(symbol)
     motif2tf_use <- motif2tf %>%
-      filter(tf %in% pattern_tfs)
+      dplyr::filter(tf %in% pattern_tfs)
     motifs_use <- motifs[unique(motif2tf_use$motif)]
     motif2tf_use
   }
@@ -539,7 +565,7 @@ if(n_fit >= 1) {
 
     ##
   modules_use <- NetworkModules(scMultiome_GRN)@meta %>%
-      filter(target%in%featurs, tf%in%featurs)
+      dplyr::filter(target%in%featurs, tf%in%featurs)
 
   n_modules <- nrow(modules_use)
 
@@ -688,7 +714,7 @@ if(n_fit >= 1) {
 
         ##
         modules_use <- NetworkModules(scMultiome_GRN)@meta %>%
-          filter(target%in%featurs, tf%in%featurs)
+          dplyr::filter(target%in%featurs, tf%in%featurs)
 
         n_modules <- nrow(modules_use)
         if(n_modules <= 2) {

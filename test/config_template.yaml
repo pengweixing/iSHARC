@@ -58,3 +58,10 @@ clustering_params:
 ##############################
 threads: 12                     ## number of cores for parellelization, will be scaled download to the availabe cores
 future_globals_maxSize: 12      ## 12 GB, you will need to adjust according your demanding and compupting resuoce
+
+##############################
+### cellranger-arc parameters
+##############################
+cellranger_create_bam: true
+cellranger_localcores: 8
+cellranger_localmem: 32

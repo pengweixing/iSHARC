@@ -212,11 +212,21 @@ The Blueprint/ENCODE reference from the R package [celldex](https://bioconductor
 if(is.na(match("WNN_clusters_singler_annot", colnames(scMultiome@meta.data)))){
 
 ## pre-downloaded data has been added to ./iSHARC/workflow/dependencies/
-ref_rds <- paste0(pipe_dir, "/workflow/dependencies/BlueprintEncodeData.RDS")
+ref_rds_candidates <- c(
+  "/data/BlueprintEncodeData.RDS",
+  file.path(pipe_dir, "data/BlueprintEncodeData.RDS")
+)
+ref_rds <- ref_rds_candidates[file.exists(ref_rds_candidates)][1]
+if (is.na(ref_rds) || !nzchar(ref_rds)) {
+  stop(
+    "Cannot find BlueprintEncodeData.RDS. Checked: ",
+    paste(ref_rds_candidates, collapse = ", ")
+  )
+}
 anno_ref <- readRDS(ref_rds)
 
 ## fetch SCT normalized GEX matrix
-expr <- GetAssayData(object = scMultiome, assay = "SCT", slot = "data")
+expr <- GetAssayData(object = scMultiome, assay = "SCT", layer = "data")
 
 ### using ENCODE
 expr_anno <- SingleR(test = expr, ref = anno_ref, labels = anno_ref$label.main, clusters =  Idents(scMultiome))

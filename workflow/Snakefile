@@ -6,21 +6,23 @@
 
 #######################
 ## loading rule modules
-include: "rules/extra_env.smk"               ## chekc & install all extra env
 include: "rules/common.smk"                  ## self-defined functions
 include: "rules/cellranger_arc.smk"          ## cellranger-arc mapping, QC and joint cell calling;
 include: "rules/individual_sample.smk"       ## primariy and secondary analysis of indiviudal sample
-include: "rules/multiple_samples.smk"        ## horizonal and vertical integration of multiple samples
+#include: "rules/multiple_samples.smk"        ## horizonal and vertical integration of multiple samples
 
 #include: "rules/main_seurat.smk"
 #include: "rules/integration.smk"
 
 ###################
-## targeted outputs
 rule all:
     input:
-        get_rule_all_input()     ## for all
-        ## for testing
-        #"extra_env/all_extra_env_installed"
-        #expand("arc_count/{samples}_library.csv", samples = SAMPLES["sample_id"])    ## testing
-        #expand("individual_samples/{samples}/{samples}_vertically_integrated_seurat_object.RDS", samples = SAMPLES["sample_id"])    ## testing
+        ## set config["test_cellranger_arc"] = true to only test cellranger_arc.smk
+        (
+            expand(
+                "arc_count/{samples}/outs/atac_fragments.tsv.gz",
+                samples=SAMPLES["sample_id"],
+            )
+            if config.get("test_cellranger_arc", False)
+            else get_rule_all_input()
+        )

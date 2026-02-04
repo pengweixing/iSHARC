@@ -6,15 +6,18 @@ import pandas as pd
 
 ## paths for pipeline and/or reference data
 work_dir = config["work_dir"]
-pipe_dir = config["pipe_dir"]
-env_dir = os.getenv("CONDA_PREFIX")
+# infer pipe_dir from Snakefile location if not provided
+pipe_dir = config.get("pipe_dir")
+if not pipe_dir:
+    pipe_dir = os.path.abspath(os.path.join(workflow.basedir, ".."))
+    config["pipe_dir"] = pipe_dir
 samples_list = config["samples"]
 samples_integr = config["samples_integr"]
 
 ######################################################
 ## read in sample and corresponding library file table
 SAMPLES = (
-    pd.read_csv(config["samples"], sep="\t")
+    pd.read_csv(config["samples"], sep=r"\s+|,", engine="python")
     .set_index("sample_id", drop=False)
     .sort_index()
 )
@@ -23,7 +26,7 @@ SAMPLES = (
 ## read in samples for aggregation
 if config["integration"]:
     SAMPLES_INTEGR = (
-        pd.read_csv(config["samples_integr"], sep="\t")
+        pd.read_csv(config["samples_integr"], sep=r"\s+|,", engine="python")
         .set_index("sample_id", drop=False)
         .sort_index()
     )
@@ -37,9 +40,6 @@ else:
 #############################################
 
 def get_rule_all_input():
-    ## ensure extra env installed
-    extra_env = "extra_env/all_extra_env_installed",
-
     if config["integration"]:
         #integrated_rna = "integration/rna/RNA_integrated_by_anchors.RDS",
         #integrated_atac = "integration/atac/ATAC_integrated_by_anchors.RDS",
@@ -48,14 +48,14 @@ def get_rule_all_input():
         integrated_rna_atac_anchor =  "integrated_samples/wnn/anchor/RNA_ATAC_integrated_by_WNN.RDS",
         integrate_report = "integrated_samples/Integrated_samples_QC_and_Primary_Results.html",
         individual_qc_report = expand("individual_samples/{samples}/{samples}_QC_and_Primary_Results.html", samples = SAMPLES_INTEGR["sample_id"]),
-        return  extra_env + integrated_rna_atac_harmony + integrated_rna_atac_anchor + individual_qc_report + integrate_report
+        return integrated_rna_atac_harmony + integrated_rna_atac_anchor + individual_qc_report + integrate_report
 
     else:         ## process individual sample
         arc_out = expand("arc_count/{samples}/outs/atac_fragments.tsv.gz", samples = SAMPLES["sample_id"]),
         main_out = expand("individual_samples/{samples}/{samples}_extended_seurat_object.RDS", samples = SAMPLES["sample_id"]),
         qc_report = expand("individual_samples/{samples}/{samples}_QC_and_Primary_Results.html", samples = SAMPLES["sample_id"]),
 
-        return  extra_env + arc_out + main_out + qc_report
+        return arc_out + main_out + qc_report
 
 
 ############################

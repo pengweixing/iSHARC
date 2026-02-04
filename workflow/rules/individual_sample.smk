@@ -11,11 +11,8 @@ rule initializaion_of_individual_sample:
         pbm = "arc_count/{sample}/outs/per_barcode_metrics.csv"
     output:
         "individual_samples/{sample}/{sample}_initial_seurat_object.RDS"
-    resources:
-        mem_mb=60000
     params:
         pipe_dir = config["pipe_dir"],
-        macs_dir = env_dir,
         min_RNA = config["second_round_cutoffs"]["nCount_RNA_min"],
         max_RNA = config["second_round_cutoffs"]["nCount_RNA_max"],
         min_ATAC = config["second_round_cutoffs"]["nCount_ATAC_min"],
@@ -25,14 +22,13 @@ rule initializaion_of_individual_sample:
         max_NS = config["second_round_cutoffs"]["Nucleosome_Signal_max"]
     log:
         "logs/{sample}_initialization.log"
-    conda:
-        "extra_env/R_pkgs.yaml"
+    container:
+        "docker://pengweixing/isharc-r:4.4.3_seurat_v2.1.5"
     shell:
         "(mkdir -p individual_samples/{wildcards.sample} && "
         "Rscript --vanilla {params.pipe_dir}/workflow/scripts/initialization_of_individual_sample.R "
         "  --sample_id {wildcards.sample} --feature_barcode_matrix {input.fbm} "
         "  --per_barcode_metrics {input.pbm}  --atac_file {input.atac} "
-        "  --macs_dir {params.macs_dir}/bin/macs2 "
         "  --min_nCount_RNA {params.min_RNA} "
         "  --max_nCount_RNA {params.max_RNA} "
         "  --min_nCount_ATAC {params.min_ATAC} "
@@ -57,8 +53,6 @@ rule vertical_integration_of_individual_sample:
         "individual_samples/{sample}/{sample}_initial_seurat_object.RDS"
     output:
         "individual_samples/{sample}/{sample}_vertically_integrated_seurat_object.RDS"
-    resources:
-        mem_mb=60000
     params:
         pipe_dir = config["pipe_dir"],
         srf = config["second_round_filter"],
@@ -78,8 +72,8 @@ rule vertical_integration_of_individual_sample:
         config["threads"]
     log:
         "logs/{sample}_vertical_integration.log"
-    conda:
-        "extra_env/R_pkgs.yaml"
+    container:
+        "docker://pengweixing/isharc-r:4.4.3_seurat_v2.1.5"
     shell:
         "(mkdir -p individual_samples/{wildcards.sample} && "
         "Rscript --vanilla {params.pipe_dir}/workflow/scripts/vertical_integration_of_individual_sample.R "
@@ -113,8 +107,6 @@ rule extended_analyses_of_individual_sample:
         "individual_samples/{sample}/{sample}_vertically_integrated_seurat_object.RDS"
     output:
         "individual_samples/{sample}/{sample}_extended_seurat_object.RDS"
-    resources:
-        mem_mb=60000
     params:
         pipe_dir = config["pipe_dir"],
         fgm = config["future_globals_maxSize"]
@@ -122,8 +114,8 @@ rule extended_analyses_of_individual_sample:
         config["threads"]
     log:
         "logs/{sample}_extended_analyses.log"
-    conda:
-        "extra_env/R_pkgs.yaml"
+    container:
+        "docker://pengweixing/isharc-r:4.4.3_seurat_v2.1.5"
     shell:
         "(mkdir -p individual_samples/{wildcards.sample} && "
         "Rscript --vanilla {params.pipe_dir}/workflow/scripts/extended_analyses_of_individual_sample.R "
@@ -142,15 +134,13 @@ rule html_report_of_individual_sample:
         "individual_samples/{sample}/{sample}_extended_seurat_object.RDS"
     output:
         "individual_samples/{sample}/{sample}_QC_and_Primary_Results.html"
-    resources:
-        mem_mb=60000
     params:
         pipe_dir = config["pipe_dir"],
         work_dir = config["work_dir"]
     log:
         "logs/{sample}_html_report.log"
-    conda:
-        "extra_env/R_pkgs.yaml"
+    container:
+        "docker://pengweixing/isharc-r:4.4.3_seurat_v2.1.5"
     shell:
         ## generating qc report named by sample id
         "(cp {params.pipe_dir}/workflow/scripts/qc_and_primary_results_report_of_individual_sample.Rmd "

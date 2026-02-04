@@ -29,8 +29,6 @@ parser$add_argument("-pbm", "--per_barcode_metrics", required=TRUE,
                     help = "per_barcode_metrics.csv file for QC metrics per barcode")
 parser$add_argument("-atac", "--atac_file",required=TRUE,
                     help = "atac_fragments.tsv.gz file for ATAC from cellranger ARC outs foler. The index file needs to be in the same location")
-parser$add_argument("-macs", "--macs_dir", required=TRUE,
-                    help = "The PATH to executable MSAC2")
 parser$add_argument("-pipe", "--pipe_dir", required=TRUE,
                     help = "The PATH to iSHARC pipeline, which local dependences included")
 parser$add_argument("-min_RNA", "--min_nCount_RNA", type = "integer", default = 1000,
@@ -56,7 +54,6 @@ sample_id <- args$sample_id
 fbm_file <- args$feature_barcode_matrix
 pbm_file <- args$per_barcode_metrics
 atac_file <- args$atac_file
-macs2_dir <- args$macs_dir
 pipe_dir <- args$pipe_dir
 
 out_dir <- paste0(getwd(), "/individual_samples/", sample_id, "/") ## with forward slash at the end
@@ -96,8 +93,18 @@ anno_gene_v <- "hg38"
 genome(anno_gene) <- anno_gene_v
 }
 
-## loading annotation data from pipeline repo
-anno_rds <- paste0(pipe_dir, "/workflow/dependencies/EnsDb.Hsapiens.v86_2UCSC_hg38.RDS")
+## loading annotation data from pipeline repo or container data dir
+anno_rds_candidates <- c(
+  "/data/EnsDb.Hsapiens.v86_2UCSC_hg38.RDS",
+  file.path(pipe_dir, "data/EnsDb.Hsapiens.v86_2UCSC_hg38.RDS")
+)
+anno_rds <- anno_rds_candidates[file.exists(anno_rds_candidates)][1]
+if (is.na(anno_rds) || !nzchar(anno_rds)) {
+  stop(
+    "Cannot find EnsDb.Hsapiens.v86_2UCSC_hg38.RDS. Checked: ",
+    paste(anno_rds_candidates, collapse = ", ")
+  )
+}
 anno_gene <- readRDS(anno_rds)
 genome_info <- seqinfo(anno_gene)
 
@@ -122,7 +129,16 @@ print("The data loading has been successfully completed!!")
 ## add RNA assay
 # Create Seurat object and add chrM percentage to meta data
 scMultiome <- CreateSeuratObject(counts = rna_counts)
-scMultiome[["pct_MT"]] <- PercentageFeatureSet(scMultiome, pattern = "^MT-")
+{
+  rna_counts <- GetAssayData(scMultiome, assay = "RNA", layer = "counts")
+  mt_features <- grep("^MT-", rownames(rna_counts), value = TRUE)
+  if (length(mt_features) == 0) {
+    scMultiome[["pct_MT"]] <- 0
+  } else {
+    scMultiome[["pct_MT"]] <- Matrix::colSums(rna_counts[mt_features, , drop = FALSE]) /
+      Matrix::colSums(rna_counts) * 100
+  }
+}
 rm(rna_counts)
 
 #######################################################
@@ -153,7 +169,7 @@ rm(atac_counts, chrom_assay)
 DefaultAssay(scMultiome) <- "ATAC_ARC"
 
 ## need to specify the outdir, folder needs to be create in advance
-peaks <- CallPeaks(scMultiome, macs2.path = macs2_dir,
+peaks <- CallPeaks(scMultiome,
                   outdir = out_dir,  fragment.tempdir = out_dir)
 
 # remove peaks on nonstandard chromosomes and in genomic blacklist regions

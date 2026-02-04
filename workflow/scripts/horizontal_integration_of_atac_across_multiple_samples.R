@@ -98,7 +98,7 @@ for(i in 1: length(sample_ids))    # for testing
 }
 
 ## reference data for scATAC-seq data
-anno_rds <- paste0(pipe_dir, "/workflow/dependencies/EnsDb.Hsapiens.v86_2UCSC_hg38.RDS")
+anno_rds <- paste0(pipe_dir, "/data/EnsDb.Hsapiens.v86_2UCSC_hg38.RDS")
 anno_gene <- readRDS(anno_rds)
 genome_info <- seqinfo(anno_gene)
 

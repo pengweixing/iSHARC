@@ -72,6 +72,24 @@ comm_res <- args$community_resolution
 
 ## output dir
 out_dir <- paste0(getwd(), "/individual_samples/", sample_id, "/") ## with forward slash at the end
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+
+## debug log
+log_path <- paste0(out_dir, sample_id, "_vertical_integration_debug.log")
+log_step <- function(msg) {
+  cat(format(Sys.time(), "%Y-%m-%d %H:%M:%S"), " | ", msg, "\n",
+      file = log_path, append = TRUE)
+}
+log_step("Script start")
+
+options(error = function() {
+  log_step("ERROR encountered. Dumping traceback.")
+  tb <- utils::capture.output(traceback())
+  if (length(tb) > 0) {
+    cat(paste(tb, collapse = "\n"), "\n", file = log_path, append = TRUE)
+  }
+  quit(status = 1)
+})
 
 }
 
@@ -79,6 +97,7 @@ out_dir <- paste0(getwd(), "/individual_samples/", sample_id, "/") ## with forwa
 ### loading required packages
 #############################
 {
+log_step("Loading required packages")
 suppressMessages(library(Seurat))
 suppressMessages(library(Signac))
 suppressMessages(library(dplyr))
@@ -97,10 +116,12 @@ options(future.globals.maxSize = args$future_globals_maxSize * 1024^3)
 ### second round cell filtering
 ###################################
 {
+log_step("Reading initial Seurat object")
 ## read in seurat object
 scMultiome <- readRDS(iso_file)
 
 if(second_round_filter){
+log_step("Second-round QC filtering")
 ## selected QC metircs for second round cell filtering
 qc_df <- data.matrix(scMultiome [[c("nCount_RNA", "pct_MT", "nCount_ATAC",
                                     "TSS_Enrichment", "Nucleosome_Signal")]])
@@ -125,16 +146,22 @@ ns_upper  <- min(args$max_Nucleosome_Signal, upper_3mad["Nucleosome_Signal"])
 
 cells_before <- nrow(scMultiome@meta.data)
 ## subsetting the scMultiome project
+md <- scMultiome@meta.data
+keep_cells <- with(
+  md,
+  nCount_RNA < rna_upper &
+    nCount_RNA > rna_lower &
+    nCount_ATAC < atac_uppper &
+    nCount_ATAC > atac_lower &
+    pct_MT < mt_upper &
+    TSS_Enrichment > tss_lower &
+    Nucleosome_Signal < ns_upper
+)
+log_step(paste0("Cells kept after QC filter: ", sum(keep_cells), " / ", nrow(md)))
 scMultiome <- subset(
-                x = scMultiome,
-                subset = nCount_RNA < rna_upper &
-                         nCount_RNA > rna_lower &
-                         nCount_ATAC < atac_uppper &
-                         nCount_ATAC > atac_lower &
-                         pct_MT < mt_upper &
-                         TSS_Enrichment > tss_lower &
-                         Nucleosome_Signal < ns_upper
-                 )
+  x = scMultiome,
+  cells = rownames(md)[keep_cells]
+)
 
 ## cells after the second round filtering
 cells_after <- nrow(scMultiome@meta.data)
@@ -150,6 +177,7 @@ print(paste0(cells_after, " of ", cells_before, " cell remained after second rou
 ## RNA alone Normalization, Dimension Reduction, Clustering and Embedding
 ########################################################################
 {
+log_step("RNA normalization and dimensional reduction")
 DefaultAssay(scMultiome) <- "RNA"
 
 ################
@@ -169,6 +197,7 @@ DefaultAssay(scMultiome) <- "RNA"
 
 if(regress_cell_cycle)
 {
+  log_step("SCTransform with cell-cycle regression")
   ## by three steps
   # 1) normalize data with SCTransform()
   scMultiome <- SCTransform(
@@ -202,6 +231,7 @@ if(regress_cell_cycle)
                   vst.flavor = "v2", verbose = FALSE
                 )
 } else {
+  log_step("SCTransform without cell-cycle regression")
   scMultiome <- SCTransform(
                   scMultiome,
                   assay = 'RNA',
@@ -227,6 +257,7 @@ scMultiome  <- FindNeighbors(scMultiome, reduction = "pca", dims = 1:dims_n, k.p
 ## ATAC alone Normalization, Dimension Reduction, Clustering and Embedding
 ###########################################################################
 {
+log_step("ATAC normalization and dimensional reduction")
 
 ## Focusing the ATAC assay with MACS2 called peaks
 if(FALSE){
@@ -264,6 +295,7 @@ scMultiome  <- FindNeighbors(scMultiome, reduction = "lsi", dims = 2:dims_n,  k.
 ## vertically integrate RNA and ATAC using WNN
 ##############################################
 {
+log_step("WNN integration and clustering")
 ## run WNN
 scMultiome <- FindMultiModalNeighbors(scMultiome, reduction.list = list("pca", "lsi"), dims.list = list(1:dims_n, 2:dims_n), k.nn = knn_k)
 scMultiome <- RunUMAP(scMultiome, nn.name = "weighted.nn", reduction.name = "umap.wnn", reduction.key = "wnnUMAP_")
@@ -294,6 +326,7 @@ write.csv(scMultiome@meta.data,  file = paste0(out_dir, sample_id, "_vertically_
 
 ###############################################
 ## UMAPs for ATAC, RAN separatly and integrated
+log_step("UMAP plots for ATAC/RNA/WNN")
 p1 <- DimPlot(scMultiome, reduction = "umap.atac", group.by = "ATAC_clusters", label = TRUE, label.size = 2.5, repel = TRUE) + ggtitle("ATAC")
 p2 <- DimPlot(scMultiome, reduction = "umap.rna",  group.by = "RNA_clusters", label = TRUE, label.size = 2.5, repel = TRUE) + ggtitle("RNA")
 p3 <- DimPlot(scMultiome, reduction = "umap.wnn", group.by = "WNN_clusters",  label = TRUE, label.size = 2.5, repel = TRUE) + ggtitle("WNN")
@@ -303,6 +336,37 @@ ggsave(paste0(out_dir, sample_id, "_ATAC_RNA_WNN_clustering_UMAPs.pdf"), width =
 
 ########################################################
 ### modality weight per integrated clusters
+log_step("Preparing modality weights for VlnPlot")
+if (!all(c("ATAC.weight", "SCT.weight") %in% colnames(scMultiome@meta.data))) {
+  weights <- NULL
+  if ("weighted.nn" %in% names(scMultiome@neighbors)) {
+    nn <- scMultiome@neighbors$weighted.nn
+    if (!is.null(nn$cell.weights)) {
+      weights <- nn$cell.weights
+    } else if (!is.null(nn@cell.weights)) {
+      weights <- nn@cell.weights
+    }
+  }
+  if (!is.null(weights)) {
+    if ("ATAC" %in% colnames(weights)) {
+      scMultiome$ATAC.weight <- weights[, "ATAC"]
+    }
+    if ("SCT" %in% colnames(weights)) {
+      scMultiome$SCT.weight <- weights[, "SCT"]
+    }
+    if ("ATAC.weight" %in% colnames(weights)) {
+      scMultiome$ATAC.weight <- weights[, "ATAC.weight"]
+    }
+    if ("SCT.weight" %in% colnames(weights)) {
+      scMultiome$SCT.weight <- weights[, "SCT.weight"]
+    }
+  }
+}
+
+if (!all(c("ATAC.weight", "SCT.weight") %in% colnames(scMultiome@meta.data))) {
+  log_step("ATAC/SCT weight columns not found; skipping VlnPlot for weights.")
+} else {
+  log_step("VlnPlot for modality weights")
 p1 <- VlnPlot(scMultiome, features = "ATAC.weight", group.by = 'WNN_clusters', sort = FALSE, pt.size = 0.1) +  ggtitle("ATAC weights")
 p1 <- p1 + theme(axis.text.x = element_blank(), axis.title.x = element_blank()) + theme(legend.position = 'none')
 
@@ -310,9 +374,11 @@ p2 <- VlnPlot(scMultiome, features = "SCT.weight", group.by = 'WNN_clusters', so
 p2 <- p2 + ggtitle("RNA weights") + theme(legend.position = 'none')
 g <- p1 + p2   & theme(plot.title = element_text(hjust = 0.5))
 ggsave(paste0(out_dir, sample_id, "_ATAC_RNA_WNN_weights.pdf"), width = 12, height = 6)
+}
 
 ####################################################################################
 ### Sankey plot for clustering changes across individually and integrated modalities
+log_step("Sankey plot for clustering changes")
 Cell_ID <- rownames(scMultiome@meta.data)
 RNA_Clusters <- paste0("RNA_", scMultiome@meta.data$RNA_clusters)
 ATAC_Clusters <- paste0("ATAC_", scMultiome@meta.data$ATAC_clusters)

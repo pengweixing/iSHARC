@@ -21,10 +21,11 @@ This schematic diagram shows you how pipeline will be working:
 
 ## Installation
 
-### Git clone this pipeline
+### Download this pipeline
 ```bash
 $ cd
-$ git clone https://github.com/pengweixing/iSHARC.git
+$ wget https://github.com/pengweixing/iSHARC/releases/download/v1.1.0/iSHARC_v1.1.0.tar.gz
+$ tar -xzf iSHARC_v1.1.0.tar.gz
 ```
 
 ### Configure the input files

@@ -1,4 +1,4 @@
-# iSHARC: <ins>I</ins>ntegrating <ins>s</ins>cMultiome data for <ins>h</ins>eterogeneity <ins>a</ins>nd <ins>r</ins>egulatory analysis in <ins>c</ins>ancer (v1.1.0)
+# iSHARC: <ins>I</ins>ntegrating <ins>s</ins>cMultiome data for <ins>h</ins>eterogeneity <ins>a</ins>nd <ins>r</ins>egulatory analysis in <ins>c</ins>ancer (v1.2.0)
 
 
 ## Introduction
@@ -23,8 +23,8 @@ This schematic diagram shows you how pipeline will be working:
 
 ### Download this pipeline
 ```bash
-wget https://github.com/pengweixing/iSHARC/blob/main/iSHARC_v1.1.0.tar.gz
-tar -xzf iSHARC_v1.1.0.tar.gz
+wget https://github.com/pengweixing/iSHARC/archive/refs/tags/v1.2.0.tar.gz
+tar -xzf v1.2.0.tar.gz
 ```
 
 ### Configure the input files

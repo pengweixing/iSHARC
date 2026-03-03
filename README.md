@@ -121,13 +121,14 @@ This schematic diagram shows you how pipeline will be working:
 	$ SNAKEFILE="/path/to/iSHARC/workflow/Snakefile"
 	$ CODE_ROOT="$(cd "$(dirname "$SNAKEFILE")/../.." && pwd)"
 	$ REFDATA_DIR="/path/to/refdata-cellranger-arc-GRCh38-2024-A"
+	$ RAWDATA_DIR="/path/to/raw_data"
 
 	$ snakemake \
 	    --snakefile "$SNAKEFILE" \
 	    --configfile /path/to/config.yaml \
 	    --config "pipe_dir=$CODE_ROOT/iSHARC" \
 	    --use-singularity \
-	    --singularity-args "--bind $CODE_ROOT --bind $CODE_ROOT/data --bind $REFDATA_DIR" \
+	    --singularity-args "--bind $CODE_ROOT --bind $RAWDATA_DIR --bind $REFDATA_DIR" \
 	    --rerun-triggers mtime \
 	    --cores 12
 	```
@@ -170,6 +171,7 @@ This schematic diagram shows you how pipeline will be working:
 	SNAKEFILE="/path/to/iSHARC/workflow/Snakefile"
 	CODE_ROOT="$(cd "$(dirname "$SNAKEFILE")/../.." && pwd)"
 	REFDATA_DIR="/path/to/refdata-cellranger-arc-GRCh38-2024-A"
+	RAWDATA_DIR="/path/to/raw_data"
 
 	cd /path/to/workdir
 
@@ -178,7 +180,7 @@ This schematic diagram shows you how pipeline will be working:
 	  --configfile /path/to/config.yaml \
 	  --config "pipe_dir=$CODE_ROOT/iSHARC" \
 	  --use-singularity \
-	  --singularity-args "--bind $CODE_ROOT --bind $CODE_ROOT/data --bind $REFDATA_DIR" \
+	  --singularity-args "--bind $CODE_ROOT --bind $RAWDATA_DIR --bind $REFDATA_DIR" \
 	  --rerun-triggers mtime \
 	  --cores 12
 	```
@@ -205,7 +207,7 @@ This schematic diagram shows you how pipeline will be working:
 	  --configfile /path/to/config.yaml \
 	  --config "pipe_dir=$CODE_ROOT/iSHARC" \
 	  --use-singularity \
-	  --singularity-args "--bind $CODE_ROOT --bind $CODE_ROOT/data --bind $REFDATA_DIR" \
+	  --singularity-args "--bind $CODE_ROOT --bind $RAWDATA_DIR --bind $REFDATA_DIR" \
 	  --rerun-triggers mtime \
 	  --cluster-config /path/to/iSHARC/workflow/config/cluster_config.yaml \
 	  --jobs 20 \
@@ -222,7 +224,7 @@ This schematic diagram shows you how pipeline will be working:
 	- `sbatch` is for SLURM. If your cluster uses SLURM, this is the correct submission command.
 	- `pipe_dir` should point to the pipeline root inside the repository, typically `.../iSHARC`.
 	- `containers_dir` should point to a shared directory containing pre-downloaded `.sif` images if your compute nodes are offline.
-	- `--singularity-args` should bind the repository root and any required reference/data directories so containerized rules can see the scripts and references.
+	- `--singularity-args` should bind the repository root, the raw-data root directory used in `samples_template.tsv`, and any required reference directories so containerized rules can see the scripts and inputs.
 	- `--rerun-triggers mtime` is recommended to avoid unnecessary reruns caused by parameter/path metadata changes.
 	- If you only want a specific target, append it at the end of the `snakemake` command, for example:
 

@@ -167,9 +167,6 @@ This schematic diagram shows you how pipeline will be working:
 	#SBATCH -o isharc_%j.out
 	#SBATCH -e isharc_%j.err
 
-	source ~/miniconda3/etc/profile.d/conda.sh
-	conda activate iSHARC
-
 	SNAKEFILE="/path/to/iSHARC/workflow/Snakefile"
 	CODE_ROOT="$(cd "$(dirname "$SNAKEFILE")/../.." && pwd)"
 	REFDATA_DIR="/path/to/refdata-cellranger-arc-GRCh38-2024-A"
@@ -234,7 +231,3 @@ This schematic diagram shows you how pipeline will be working:
 	```
 
 	For more details about cluster execution, refer to the [Snakemake documentation](https://snakemake.readthedocs.io/en/stable/executing/cluster.html).
-
-
-## Trouble Shooting
-For troubleshooting issues related to pipeline installation and execution, please refer to [this document](./assets/Trouble_Shooting.md). This document will be continuously updated to address errors reported by users.

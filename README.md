@@ -111,6 +111,24 @@ This schematic diagram shows you how pipeline will be working:
 
 	Use absolute paths in `config.yaml` and the TSV files. This is the most reliable setup for local runs and HPC execution.
 
+	Raw-data directory example:
+
+	```text
+	~/Desktop/Projects/isharc/code/data/
+	├── sampleA/
+	│   ├── gex/
+	│   └── atac/
+	└── sampleB/
+	    ├── gex/
+	    └── atac/
+	```
+
+	In this layout:
+
+	- `RAWDATA_DIR` can be set to `~/Desktop/Projects/isharc/code/data`
+	- `gex_seq_path` can be `~/Desktop/Projects/isharc/code/data/sampleA/gex`
+	- `atac_seq_path` can be `~/Desktop/Projects/isharc/code/data/sampleA/atac`
+
 3) Run on a local PC
 
 	The workflow can also be run on a local workstation or server. The current rules use `--use-singularity`, so your local machine should provide Singularity or Apptainer.

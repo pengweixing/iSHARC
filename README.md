@@ -32,45 +32,36 @@ This schematic diagram shows you how pipeline will be working:
 	$ git clone https://github.com/yzeng-lol/iSHARC
 	```
 
-3) Install pipeline\'s core environment
-	```bash
-	$ cd iSHARC
-	$ conda activate base
-	$ mamba env create --file conda_env.yaml
-	```
+3) Run on a local PC
 
-4) Install pipeline\'s additional environment
-	> **IMPORTANT**: ONLY EXTRA ENVIRONMENTS WILL BE INSTALLED, MAKE SURE YOU STILL HAVE INTERNET ACCESS.
+	The workflow can also be run on a local workstation or server. The current rules use `--use-singularity`, so your local machine should provide Singularity or Apptainer.
+
+	A minimal local run looks like this:
 
 	```bash
-	$ conda activate iSHARC
-	$ snakemake --snakefile ./workflow/Snakefile \
-	            --configfile ./test/config_template.yaml \
-		    --conda-prefix ${CONDA_PREFIX}_extra_env \
-	            --use-conda --conda-create-envs-only -c 1 -p
+	$ SNAKEFILE="/path/to/iSHARC/workflow/Snakefile"
+	$ CODE_ROOT="$(cd "$(dirname "$SNAKEFILE")/../.." && pwd)"
+	$ REFDATA_DIR="/path/to/refdata-cellranger-arc-GRCh38-2024-A"
+
+	$ snakemake \
+	    --snakefile "$SNAKEFILE" \
+	    --configfile /path/to/config.yaml \
+	    --config "pipe_dir=$CODE_ROOT/iSHARC" \
+	    --use-singularity \
+	    --singularity-args "--bind $CODE_ROOT --bind $CODE_ROOT/data --bind $REFDATA_DIR" \
+	    --rerun-triggers mtime \
+	    --cores 12
 	```
 
-	> **IMPORTANT**: The required version of the Matrix package conflicts with TFBSTools, leading to the error: "object 'R_sparse_marginsum' not found". To resolve this issue for now:
+	If your local machine does not have internet access, you can pre-download the container images first:
 
-	Step 1. Activate the extra environment you installed earlier.
 	```bash
-	$ extra_env_path=${CONDA_PREFIX}_extra_env
-	$ conda deactivate                        
-	$ conda activate  ${extra_env_path}/*_
-	$ R   
+	$ bash /path/to/iSHARC/workflow/scripts/download_containers.sh /path/to/iSHARC/containers
 	```
 
-	Step 2. Force a reinstallation of TFBSTools from the source within R. Important: At the end of the installation process, select the option to update none of the old packages to prevent potential conflicts.  
-	```r
-	> if (!require("BiocManager", quietly = TRUE)) install.packages("BiocManager")
-	> BiocManager::install("TFBSTools", type = "source", force = TRUE)
-	```
+	Then set `containers_dir` in your config YAML to that directory.
 
-5) Test run
-
-	To perform a test run using the demo datasets, refer to the configuration and sample information templates and introductions provided within the [test](./test/) folder, Where you can also find and preview the demo HTML reports for the primary results for an [individual sample](https://html-preview.github.io/?url=https://github.com/yzeng-lol/iSHARC/blob/main/test/lymphoma_14k_QC_and_Primary_Results.html) and [integrated multiple samples](https://html-preview.github.io/?url=https://github.com/yzeng-lol/iSHARC/blob/main/test/Integrated_demo_samples_QC_and_Primary_Results.html).
-
-6) Run on SLURM HPC
+4) Run on SLURM HPC
 
 	iSHARC can be run on a SLURM cluster with `sbatch`. The current workflow is configured to run with `--use-singularity`, so the compute nodes must provide Singularity or Apptainer.
 

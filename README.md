@@ -20,13 +20,14 @@ This schematic diagram shows you how pipeline will be working:
 
 
 ## Installation
-1) Git clone this pipeline.
+
+### Git clone this pipeline
 	```bash
 	$ cd
 	$ git clone https://github.com/pengweixing/iSHARC.git
 	```
 
-2) Configure the input files
+### Configure the input files
 
 	The repository provides example templates under `test/`:
 
@@ -129,7 +130,7 @@ This schematic diagram shows you how pipeline will be working:
 	- `gex_seq_path` can be `~/Desktop/Projects/isharc/code/data/sampleA/gex`
 	- `atac_seq_path` can be `~/Desktop/Projects/isharc/code/data/sampleA/atac`
 
-3) Run on a local PC
+### Run on a local PC
 
 	The workflow can also be run on a local workstation or server. The current rules use `--use-singularity`, so your local machine should provide Singularity or Apptainer.
 
@@ -159,7 +160,7 @@ This schematic diagram shows you how pipeline will be working:
 
 	Then set `containers_dir` in your config YAML to that directory.
 
-4) Run on SLURM HPC
+### Run on SLURM HPC
 
 	iSHARC can be run on a SLURM cluster with `sbatch`. The current workflow is configured to run with `--use-singularity`, so the compute nodes must provide Singularity or Apptainer.
 

@@ -27,6 +27,11 @@ wget https://github.com/pengweixing/iSHARC/archive/refs/tags/v1.2.0.tar.gz
 tar -xzf v1.2.0.tar.gz
 ```
 
+### Install Singularity
+```bash
+conda install conda-forge::singularity
+```
+
 ### Configure the input files
 
 The repository provides example templates under `test/`:

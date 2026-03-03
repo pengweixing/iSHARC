@@ -23,7 +23,7 @@ This schematic diagram shows you how pipeline will be working:
 
 ### Download this pipeline
 ```bash
-wget https://github.com/pengweixing/iSHARC/releases/download/v1.1.0/iSHARC_v1.1.0.tar.gz
+wget https://github.com/pengweixing/iSHARC/blob/main/iSHARC_v1.1.0.tar.gz
 tar -xzf iSHARC_v1.1.0.tar.gz
 ```
 

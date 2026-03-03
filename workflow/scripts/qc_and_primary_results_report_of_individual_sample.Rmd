@@ -50,9 +50,166 @@ library(ggpubr)
 library(ggraph)
 library(tidygraph)
 library(clusterProfiler)
+library(rlang)
+library(grid)
+library(ComplexHeatmap)
+library(circlize)
+library(scales)
 
 if(!require("KEGG.db"))  install.packages(paste0(pipe_dir, "/workflow/dependencies/KEGG.db_1.0.tar.gz"))
 library(KEGG.db)
+
+DoMultiBarHeatmap <- function (object,
+                               features = NULL,
+                               cells = NULL,
+                               group.by = "ident",
+                               additional.group.by = NULL,
+                               additional.group.sort.by = NULL,
+                               cols.use = NULL,
+                               group.bar = TRUE,
+                               disp.min = -2.5,
+                               disp.max = NULL,
+                               slot = "scale.data",
+                               assay = NULL,
+                               label = TRUE,
+                               size = 5.5,
+                               hjust = 0,
+                               angle = 45,
+                               raster = TRUE,
+                               draw.lines = TRUE,
+                               lines.width = NULL,
+                               group.bar.height = 0.02,
+                               combine = TRUE)
+{
+  cells <- cells %||% colnames(x = object)
+  if (is.numeric(x = cells)) {
+    cells <- colnames(x = object)[cells]
+  }
+  assay <- assay %||% DefaultAssay(object = object)
+  DefaultAssay(object = object) <- assay
+  features <- features %||% VariableFeatures(object = object)
+  features <- unique(x = features)
+  disp.max <- disp.max %||% ifelse(test = slot == "scale.data", yes = 2.5, no = 6)
+
+  possible.features <- rownames(x = GetAssayData(object = object, layer = slot))
+  if (any(!features %in% possible.features)) {
+    bad.features <- features[!features %in% possible.features]
+    features <- features[features %in% possible.features]
+    if (length(x = features) == 0) {
+      stop("No requested features found in the ", slot, " slot for the ", assay, " assay.")
+    }
+    warning("The following features were omitted as they were not found in the ",
+            slot, " slot for the ", assay, " assay: ", paste(bad.features, collapse = ", "))
+  }
+
+  if (!is.null(additional.group.sort.by)) {
+    if (any(!additional.group.sort.by %in% additional.group.by)) {
+      bad.sorts <- additional.group.sort.by[!additional.group.sort.by %in% additional.group.by]
+      additional.group.sort.by <- additional.group.sort.by[additional.group.sort.by %in% additional.group.by]
+      if (length(x = bad.sorts) > 0) {
+        warning("The following additional sorts were omitted as they were not a subset of additional.group.by : ",
+                paste(bad.sorts, collapse = ", "))
+      }
+    }
+  }
+
+  data <- as.matrix(x = t(x = GetAssayData(object = object, layer = slot)[features, cells, drop = FALSE]))
+  data[data < disp.min] <- disp.min
+  data[data > disp.max] <- disp.max
+
+  object <- suppressMessages(expr = StashIdent(object = object, save.name = "ident"))
+  group.by <- group.by %||% "ident"
+  groups.use <- object[[c(group.by, additional.group.by[!additional.group.by %in% group.by])]][cells, , drop = FALSE]
+
+  plots <- list()
+  for (i in group.by) {
+    data.group <- data
+
+    if (!is_null(additional.group.by)) {
+      additional.group.use <- additional.group.by[additional.group.by != i]
+      if (!is_null(additional.group.sort.by)) {
+        additional.sort.use <- additional.group.sort.by[additional.group.sort.by != i]
+      } else {
+        additional.sort.use <- NULL
+      }
+    } else {
+      additional.group.use <- NULL
+      additional.sort.use <- NULL
+    }
+
+    group.use <- groups.use[, c(i, additional.group.use), drop = FALSE]
+    for (colname in colnames(group.use)) {
+      if (!is.factor(x = group.use[[colname]])) {
+        group.use[[colname]] <- factor(x = group.use[[colname]])
+      }
+    }
+
+    order_expr <- paste0("order(", paste(c(i, additional.sort.use), collapse = ","), ")")
+    group.use <- with(group.use, group.use[eval(parse(text = order_expr)), , drop = FALSE])
+    data.group <- data.group[rownames(group.use), , drop = FALSE]
+
+    anno_df <- group.use
+    anno_cols <- list()
+    for (colname in colnames(anno_df)) {
+      if (!is_null(cols.use[[colname]])) {
+        levs <- levels(anno_df[[colname]])
+        if (!is_null(names(cols.use[[colname]])) && all(levs %in% names(cols.use[[colname]]))) {
+          anno_cols[[colname]] <- as.vector(cols.use[[colname]][levs])
+        } else {
+          if (length(cols.use[[colname]]) < length(levs)) {
+            warning("Cannot use provided colors for ", colname, " since there aren't enough colors.")
+            anno_cols[[colname]] <- scales::hue_pal()(length(levs))
+          } else {
+            anno_cols[[colname]] <- as.vector(cols.use[[colname]])[seq_len(length(levs))]
+          }
+        }
+      } else {
+        anno_cols[[colname]] <- scales::hue_pal()(length(levels(anno_df[[colname]])))
+      }
+      names(anno_cols[[colname]]) <- levels(anno_df[[colname]])
+    }
+
+    top_anno <- NULL
+    if (group.bar) {
+      top_anno <- HeatmapAnnotation(
+        df = anno_df,
+        col = anno_cols,
+        which = "column",
+        show_annotation_name = label,
+        annotation_name_side = "right",
+        annotation_name_gp = grid::gpar(fontsize = 8),
+        annotation_legend_param = list(
+          title_gp = grid::gpar(fontsize = 8),
+          labels_gp = grid::gpar(fontsize = 7),
+          nrow = 1
+        )
+      )
+    }
+
+    hm <- Heatmap(
+      t(data.group),
+      name = "Expression",
+      cluster_rows = FALSE,
+      cluster_columns = FALSE,
+      show_column_names = FALSE,
+      show_row_names = TRUE,
+      top_annotation = top_anno,
+      column_title = NULL,
+      row_names_gp = grid::gpar(fontsize = size),
+      use_raster = raster,
+      heatmap_legend_param = list(title_gp = grid::gpar(fontsize = 8), labels_gp = grid::gpar(fontsize = 7)),
+      col = circlize::colorRamp2(c(disp.min, 0, disp.max), c("#4DAF4A", "#000000", "#E41A1C"))
+    )
+
+    plots[[i]] <- hm
+  }
+
+  if (combine) {
+    ht <- Reduce(`+`, plots)
+    return(draw(ht, heatmap_legend_side = "right", annotation_legend_side = "right"))
+  }
+  return(plots)
+}
 
 ```
 
@@ -285,13 +442,20 @@ The ATAC peaks linked to these top 5 genes can be found in the file `r sample_id
 
 ```{r, echo=FALSE, message = FALSE, warning = FALSE, fig.width = 15, fig.height= 6}
 
-if(length(scMultiome@assays$SCT@misc$DEGs_top5) > 0){
-source(paste0(pipe_dir, "/workflow/scripts/DoMutiBarHeatmap.R"))   ## function for multiple bars
+if(length(scMultiome[["SCT"]]@misc$DEGs_top5) > 0){
+features_top5 <- unique(unlist(scMultiome[["SCT"]]@misc$DEGs_top5, use.names = FALSE))
+features_top5 <- features_top5[!is.na(features_top5) & nzchar(features_top5)]
+features_in_scale <- rownames(GetAssayData(scMultiome, assay = "SCT", layer = "scale.data"))
+features_use <- intersect(features_top5, features_in_scale)
 
-DoMultiBarHeatmap(scMultiome, features = scMultiome@assays$SCT@misc$DEGs_top5, assay = 'SCT',
-                  group.by='WNN_clusters_singler_annot', label = FALSE,
-                  additional.group.by = c('WNN_clusters_copykat_annot', "Phase", 'ATAC_clusters',  'RNA_clusters', 'WNN_clusters'),
-                  additional.group.sort.by = c('WNN_clusters'))
+if (length(features_use) == 0) {
+  message("Skipping DoMultiBarHeatmap: no top5 DEGs found in SCT scale.data.")
+} else {
+  DoMultiBarHeatmap(scMultiome, features = features_use, assay = 'SCT',
+                    group.by='WNN_clusters_singler_annot', label = FALSE,
+                    additional.group.by = c('WNN_clusters_copykat_annot', "Phase", 'ATAC_clusters',  'RNA_clusters', 'WNN_clusters'),
+                    additional.group.sort.by = c('WNN_clusters'))
+}
 }
 
 ```
@@ -315,18 +479,25 @@ if(TRUE){
       return(g_ezid)
     }
 
-    deg_list <- lapply(scMultiome@assays$SCT@misc$DEGs, id_convert)
+    deg_list <- lapply(scMultiome[["SCT"]]@misc$DEGs, id_convert)
+    deg_list <- deg_list[lapply(deg_list, length) > 0]
+    if (length(deg_list) > 0) {
+      if (is.null(names(deg_list))) {
+        names(deg_list) <- paste0("cluster_", seq_along(deg_list))
+      }
+      names(deg_list) <- make.unique(as.character(names(deg_list)))
 
-    compGO <- compareCluster(geneCluster   = deg_list ,
-                             fun           = "enrichGO",
-                             OrgDb='org.Hs.eg.db',
-                             pvalueCutoff  = 0.05,
-                             pAdjustMethod = "BH")
+      compGO <- compareCluster(geneCluster   = deg_list ,
+                               fun           = "enrichGO",
+                               OrgDb='org.Hs.eg.db',
+                               pvalueCutoff  = 0.05,
+                               pAdjustMethod = "BH")
 
-    if(length(compGO) > 0){
-    p2 <- dotplot(compGO, showCategory = 1, title = "GO enrichment ") + labs(x = "") + scale_x_discrete(guide = guide_axis(angle = 45))
+      if(length(compGO) > 0){
+      p2 <- dotplot(compGO, showCategory = 1, title = "GO enrichment ") + labs(x = "") + scale_x_discrete(guide = guide_axis(angle = 45))
 
-    p2
+      p2
+      }
     }
 }
 
@@ -351,18 +522,25 @@ if(TRUE){
       return(g_ezid)
     }
 
-    deg_list <- lapply(scMultiome@assays$SCT@misc$DEGs, id_convert)
+    deg_list <- lapply(scMultiome[["SCT"]]@misc$DEGs, id_convert)
+    deg_list <- deg_list[lapply(deg_list, length) > 0]
+    if (length(deg_list) > 0) {
+      if (is.null(names(deg_list))) {
+        names(deg_list) <- paste0("cluster_", seq_along(deg_list))
+      }
+      names(deg_list) <- make.unique(as.character(names(deg_list)))
 
-    ## KEGG enrichment
-    compKEGG <- compareCluster(geneCluster   = deg_list,
-                               fun           = "enrichKEGG",
-                               pvalueCutoff  = 0.05,
-                               pAdjustMethod = "BH",
-                               use_internal_data =T)    ## using local build library "KEGG.db"
+      ## KEGG enrichment
+      compKEGG <- compareCluster(geneCluster   = deg_list,
+                                 fun           = "enrichKEGG",
+                                 pvalueCutoff  = 0.05,
+                                 pAdjustMethod = "BH",
+                                 use_internal_data =T)    ## using local build library "KEGG.db"
 
-    if(length(compKEGG) > 0){
-    p1 <- dotplot(compKEGG, showCategory = 2, title = "KEGG pathway enrichment") + labs(x = "") + scale_x_discrete(guide = guide_axis(angle = 45))
-    p1
+      if(length(compKEGG) > 0){
+      p1 <- dotplot(compKEGG, showCategory = 2, title = "KEGG pathway enrichment") + labs(x = "") + scale_x_discrete(guide = guide_axis(angle = 45))
+      p1
+      }
     }
 }
 

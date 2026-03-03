@@ -1,0 +1,92 @@
+__default__:
+  partition: all
+  cpus: 4
+  mem: 32G
+  time: "24:00:00"
+  job_name: "{rule}"
+  stdout: "logs_cluster/{rule}.%j.out"
+  stderr: "logs_cluster/{rule}.%j.err"
+
+prep_library_file:
+  cpus: 1
+  mem: 8G
+  time: "04:00:00"
+
+cellranger_arc_count:
+  partition: himem
+  cpus: 16
+  mem: 128G
+  time: "48:00:00"
+  job_name: "{rule}_{wildcards.sample}"
+  stdout: "logs_cluster/{rule}_{wildcards.sample}.%j.out"
+  stderr: "logs_cluster/{rule}_{wildcards.sample}.%j.err"
+
+initializaion_of_individual_sample:
+  cpus: 8
+  mem: 64G
+  time: "24:00:00"
+  job_name: "{rule}_{wildcards.sample}"
+  stdout: "logs_cluster/{rule}_{wildcards.sample}.%j.out"
+  stderr: "logs_cluster/{rule}_{wildcards.sample}.%j.err"
+
+vertical_integration_of_individual_sample:
+  cpus: 12
+  mem: 96G
+  time: "24:00:00"
+  job_name: "{rule}_{wildcards.sample}"
+  stdout: "logs_cluster/{rule}_{wildcards.sample}.%j.out"
+  stderr: "logs_cluster/{rule}_{wildcards.sample}.%j.err"
+
+extended_pre_grn_analyses_of_individual_sample:
+  cpus: 8
+  mem: 64G
+  time: "24:00:00"
+  job_name: "{rule}_{wildcards.sample}"
+  stdout: "logs_cluster/{rule}_{wildcards.sample}.%j.out"
+  stderr: "logs_cluster/{rule}_{wildcards.sample}.%j.err"
+
+grn_analyses_of_individual_sample:
+  partition: himem
+  cpus: 12
+  mem: 96G
+  time: "48:00:00"
+  job_name: "{rule}_{wildcards.sample}"
+  stdout: "logs_cluster/{rule}_{wildcards.sample}.%j.out"
+  stderr: "logs_cluster/{rule}_{wildcards.sample}.%j.err"
+
+html_report_of_individual_sample:
+  cpus: 4
+  mem: 32G
+  time: "12:00:00"
+  job_name: "{rule}_{wildcards.sample}"
+  stdout: "logs_cluster/{rule}_{wildcards.sample}.%j.out"
+  stderr: "logs_cluster/{rule}_{wildcards.sample}.%j.err"
+
+horizontal_integration_of_rna_across_multiple_samples:
+  partition: himem
+  cpus: 16
+  mem: 128G
+  time: "48:00:00"
+
+horizontal_integration_of_atac_across_multiple_samples:
+  partition: himem
+  cpus: 16
+  mem: 128G
+  time: "48:00:00"
+
+vertical_integration_of_multiple_harmonized_samples:
+  partition: himem
+  cpus: 16
+  mem: 128G
+  time: "48:00:00"
+
+vertical_integration_of_multiple_anchored_samples:
+  partition: himem
+  cpus: 16
+  mem: 128G
+  time: "48:00:00"
+
+html_report_of_multiple_samples:
+  cpus: 4
+  mem: 32G
+  time: "12:00:00"

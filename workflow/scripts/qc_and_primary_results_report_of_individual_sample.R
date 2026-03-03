@@ -35,7 +35,7 @@ print(args)
 sample_id <- args$sample_id
 exo_file <- args$extended_analyses_seurat_object
 work_dir <- args$work_dir  ## for initial seurat object meta.data for QC
-pipe_dir <- args$pipe_dir  ## for DoMultiBarHeatmap
+pipe_dir <- args$pipe_dir
 rmd_file <- args$report_rmd_file
 
 ## output dir
@@ -49,5 +49,10 @@ out_dir <- paste0("individual_samples/", sample_id)
 suppressMessages(library(rmarkdown))        ## for HTML QC report
 
 render(rmd_file, output_dir = out_dir,
-       params = list(readin = exo_file, sample_id = sample_id, work_dir = work_dir, pipe_dir = pipe_dir))
+       params = list(
+         readin = exo_file,
+         sample_id = sample_id,
+         work_dir = work_dir,
+         pipe_dir = pipe_dir
+       ))
 }

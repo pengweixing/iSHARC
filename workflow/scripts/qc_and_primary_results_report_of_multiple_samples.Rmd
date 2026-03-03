@@ -8,14 +8,12 @@ output:
 params:
   ## will be override by render
   integr_dir: "/path/to/integration/folder"
-  pipe_dir: "/path/to/iSHARC"
 ---
 
 This report was generated using [iSHARC](https://github.com/yzeng-lol/iSHARC).For additional downstream analyses and relevant tools, please refer to [COBE](https://www.pmcobe.ca/pipeline/618285d473c8c4003964393b).
 
 ```{r setup, include=FALSE}
 ##knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
-pipe_dir <- params$pipe_dir
 
 ## For RNA
 rna_merged <- readRDS(paste0(params$integr_dir, "/rna/RNA_integrated_by_merging.RDS"))
@@ -30,6 +28,25 @@ atac_anchored <-  readRDS(paste0(params$integr_dir, "/atac/ATAC_integrated_by_an
 ## For integrated RNA and ATAC
 harmony_wnn <- readRDS(paste0(params$integr_dir, "/wnn/harmony/RNA_ATAC_integrated_by_WNN.RDS"))
 anchor_wnn <- readRDS(paste0(params$integr_dir, "/wnn/anchor/RNA_ATAC_integrated_by_WNN.RDS"))
+
+normalize_wnn_weight_columns <- function(obj) {
+  meta_cols <- colnames(obj@meta.data)
+  rna_weight_candidates <- c("RNA_integrated.weight", "RNAintegrated.weight", "RNA.weight", "pca.weight", "harmony.weight")
+  atac_weight_candidates <- c("ATAC_integrated.weight", "ATAC.weight", "lsi_integrated.weight", "harmony_atac.weight")
+  rna_weight_col <- rna_weight_candidates[rna_weight_candidates %in% meta_cols][1]
+  atac_weight_col <- atac_weight_candidates[atac_weight_candidates %in% meta_cols][1]
+
+  if (!is.na(rna_weight_col) && nzchar(rna_weight_col)) {
+    obj$RNA_integrated.weight <- obj[[rna_weight_col]][, 1]
+  }
+  if (!is.na(atac_weight_col) && nzchar(atac_weight_col)) {
+    obj$ATAC_integrated.weight <- obj[[atac_weight_col]][, 1]
+  }
+  obj
+}
+
+harmony_wnn <- normalize_wnn_weight_columns(harmony_wnn)
+anchor_wnn <- normalize_wnn_weight_columns(anchor_wnn)
 
 ```
 

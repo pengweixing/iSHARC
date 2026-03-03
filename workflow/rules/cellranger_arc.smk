@@ -34,7 +34,7 @@ rule cellranger_arc_count:
         "arc_count/{sample}/outs/atac_fragments.tsv.gz",
         "arc_count/{sample}/outs/per_barcode_metrics.csv"
     container:
-        "docker://litd/docker-cellranger-arc"
+        CELLRANGER_ARC_CONTAINER
     params:
         out_dir = config["work_dir"],
         arc_outs_path = get_arc_outs_path,

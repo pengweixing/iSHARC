@@ -1,28 +1,35 @@
-#############
-## validation
-## will be added
-#validate(config, "schema/config.schema.yaml")
-#validate(samples, "schema/samples.schema.yaml")
+import os
+
+def _to_abs_from_repo(path, repo_root):
+    if not path:
+        return None
+    return path if os.path.isabs(path) else os.path.abspath(os.path.join(repo_root, path))
+
+repo_root = os.path.abspath(os.path.join(workflow.basedir, "..", ".."))
+bind_candidates = [
+    repo_root,
+    os.path.join(repo_root, "data"),
+    config.get("arc_ref"),
+    config.get("work_dir"),
+    config.get("pipe_dir"),
+]
+bind_dirs = []
+for candidate in bind_candidates:
+    resolved = _to_abs_from_repo(candidate, repo_root)
+    if resolved and os.path.exists(resolved) and resolved not in bind_dirs:
+        bind_dirs.append(resolved)
+
+singularity_args: " ".join(f"--bind {path}" for path in bind_dirs)
+
 
 #######################
 ## loading rule modules
 include: "rules/common.smk"                  ## self-defined functions
 include: "rules/cellranger_arc.smk"          ## cellranger-arc mapping, QC and joint cell calling;
 include: "rules/individual_sample.smk"       ## primariy and secondary analysis of indiviudal sample
-#include: "rules/multiple_samples.smk"        ## horizonal and vertical integration of multiple samples
-
-#include: "rules/main_seurat.smk"
-#include: "rules/integration.smk"
+include: "rules/multiple_samples.smk"        ## horizonal and vertical integration of multiple samples
 
 ###################
 rule all:
     input:
-        ## set config["test_cellranger_arc"] = true to only test cellranger_arc.smk
-        (
-            expand(
-                "arc_count/{samples}/outs/atac_fragments.tsv.gz",
-                samples=SAMPLES["sample_id"],
-            )
-            if config.get("test_cellranger_arc", False)
-            else get_rule_all_input()
-        )
+         get_rule_all_input()

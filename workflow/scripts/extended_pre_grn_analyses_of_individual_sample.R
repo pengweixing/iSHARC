@@ -16,6 +16,13 @@
 {
 suppressPackageStartupMessages(library("argparse"))
 
+## crash helper: show error + call stack so we can locate failing line
+options(error = function() {
+  message("ERROR: ", geterrmessage())
+  traceback(2)
+  quit(status = 1)
+})
+
 # create parser object
 parser <- ArgumentParser()
 
@@ -48,47 +55,12 @@ pipe_dir <- args$pipe_dir
 out_dir <- paste0(getwd(), "/individual_samples/", sample_id, "/") ## with forward slash at the end
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-## debug log
-log_path <- paste0(out_dir, sample_id, "_extended_analyses_debug.log")
-log_step <- function(msg) {
-  cat(format(Sys.time(), "%Y-%m-%d %H:%M:%S"), " | ", msg, "\n",
-      file = log_path, append = TRUE)
-}
-log_step("Script start")
-
-options(error = function() {
-  log_step("ERROR encountered. Dumping traceback.")
-  log_step(paste0("Last error message: ", geterrmessage()))
-  tb <- utils::capture.output(traceback())
-  if (length(tb) > 0) {
-    cat(paste(tb, collapse = "\n"), "\n", file = log_path, append = TRUE)
-  }
-  quit(status = 1)
-})
-
-# helper for step-wise logging
-run_step <- function(step_name, expr) {
-  log_step(paste0("[START] ", step_name))
-  t0 <- Sys.time()
-  out <- tryCatch(
-    eval.parent(substitute(expr)),
-    error = function(e) {
-      log_step(paste0("[FAIL] ", step_name, " | ", conditionMessage(e)))
-      stop(e)
-    }
-  )
-  dt <- round(as.numeric(difftime(Sys.time(), t0, units = "secs")), 2)
-  log_step(paste0("[DONE] ", step_name, " | ", dt, " sec"))
-  out
-}
-
 }
 
 
 ############################
 ### loading required packages
 #############################
-log_step("Loading required packages")
 suppressMessages(library(Seurat))
 suppressMessages(library(Signac))
 suppressMessages(library(SingleR))
@@ -125,34 +97,25 @@ library(copykat)
 library(Pando)
 suppressMessages(library(doParallel))       ## parallelization for pando
 
-log_step("Packages loaded; sessionInfo below")
-si <- utils::capture.output(sessionInfo())
-cat(paste(si, collapse = "\n"), "\n", file = log_path, append = TRUE)
-
 
 ##############################################################
 ## annotating the cell clusters with integrated ATAC and RNA
 ##############################################################
 ## readin vertically integrated seurat object
-scMultiome <- run_step("Read Seurat object", readRDS(vio_file))
+scMultiome <- readRDS(vio_file)
 
 ## ensure the active.ident is WNN_Clusters
-scMultiome  <- run_step(
-  "Set active identity to WNN_clusters",
-  SetIdent(scMultiome , value = scMultiome@meta.data$WNN_clusters)
-)
+scMultiome  <- SetIdent(scMultiome , value = scMultiome@meta.data$WNN_clusters)
 
 ##############################################################
 ## auto annotation using publicly available reference datasets
-log_step("Loading BlueprintEncodeData reference")
 ## anno_ref <-  BlueprintEncodeData()       ## form package celldex, internet required
 ref_rds_candidates <- c("/data/BlueprintEncodeData.RDS")
 
-log_step(paste0("Checking reference paths: ", paste(ref_rds_candidates, collapse = ", ")))
 if (dir.exists("/data")) {
-  log_step(paste0("Contents of /data: ", paste(list.files("/data"), collapse = ", ")))
+  list.files("/data")
 } else {
-  log_step("/data does not exist")
+  message("/data does not exist")
 }
 ref_rds <- ref_rds_candidates[file.exists(ref_rds_candidates)][1]
 if (is.na(ref_rds) || !nzchar(ref_rds)) {
@@ -161,32 +124,16 @@ if (is.na(ref_rds) || !nzchar(ref_rds)) {
     paste(ref_rds_candidates, collapse = ", ")
   )
 }
-log_step(paste0("Reading reference RDS: ", ref_rds))
-fi <- tryCatch(file.info(ref_rds), error = function(e) NULL)
-if (!is.null(fi)) {
-  log_step(paste0("Reference file size: ", fi$size, " bytes"))
-}
-anno_ref <- tryCatch(
-  readRDS(ref_rds),
-  error = function(e) {
-    log_step(paste0("ERROR reading reference RDS: ", conditionMessage(e)))
-    log_step(paste0("ERROR class: ", paste(class(e), collapse = ", ")))
-    stop(e)
-  }
-)
-log_step("Reference RDS loaded successfully")
+anno_ref <- readRDS(ref_rds)
 
 ## fetch SCT normalized GEX matrix
 expr <- GetAssayData(object = scMultiome, assay = "SCT", layer = "data")
 
 ### using ENCODE
-expr_anno <- run_step(
-  "SingleR annotation",
-  SingleR(test = expr, ref = anno_ref, labels = anno_ref$label.main, clusters =  Idents(scMultiome))
-)
+expr_anno <- SingleR(test = expr, ref = anno_ref, labels = anno_ref$label.main, clusters =  Idents(scMultiome))
 
 ## match cluster labels and annotated labels
-  idx_m <- match(Idents(scMultiome), rownames(expr_anno))
+idx_m <- match(Idents(scMultiome), rownames(expr_anno))
 
 ## add labels scMultiome object
 scMultiome[["WNN_clusters_singler_annot"]] <- expr_anno$labels[idx_m]
@@ -201,18 +148,19 @@ old_wd <- getwd()
 setwd(out_dir)                                     ## ensure output copykat related results to desired folder
 
 expr_raw <- as.matrix(GetAssayData(object = scMultiome, assay = "RNA", layer = "counts"))
-
-copykat_res <- run_step(
-  "CopyKAT tumor/normal prediction",
-  copykat(rawmat = expr_raw, sam.name = sample_id , id.type = "S", ngene.chr = 5, win.size = 25,
-          KS.cut = 0.1,  distance = "euclidean", norm.cell.names = "", output.seg = "FLASE",
-          plot.genes = "TRUE", genome = "hg20", n.cores = 1)
-)
+copykat_rds <- paste0(out_dir, sample_id, "_copykat_res.RDS")
+if (file.exists(copykat_rds)) {
+  copykat_res <- readRDS(copykat_rds)
+} else {
+  copykat_res <- copykat(rawmat = expr_raw, sam.name = sample_id , id.type = "S", ngene.chr = 5, win.size = 25,
+                         KS.cut = 0.1,  distance = "euclidean", norm.cell.names = "", output.seg = "FLASE",
+                         plot.genes = "TRUE", genome = "hg20", n.cores = 1)
+  saveRDS(copykat_res, copykat_rds)
+}
 
 ## adding copykat predict labels to the scMultiome metatable
 idx_s <- match(rownames(scMultiome@meta.data),copykat_res$prediction$cell.names)
 
-## no
 cell_type <- rep("not.predicted", length(idx_s))    ## there are cells will excluded for copykat prediction
 cell_type[!is.na(idx_s)] <- copykat_res$prediction$copykat.pred[idx_s[!is.na(idx_s)]]
 
@@ -305,41 +253,29 @@ if(TRUE){
     deg_list <- deg_list[lapply(deg_list, length) > 0]
 
     ## KEGG enrichment
-    compKEGG <- run_step(
-      "Cluster-specific DEGs KEGG enrichment",
-      compareCluster(geneCluster   = deg_list,
-                     fun           = "enrichKEGG",
-                     pvalueCutoff  = 0.05,
-                     pAdjustMethod = "BH",
-                     use_internal_data =T)    ## using local build library "KEGG.db"
-    )
+    compKEGG <- compareCluster(geneCluster   = deg_list,
+                               fun           = "enrichKEGG",
+                               pvalueCutoff  = 0.05,
+                               pAdjustMethod = "BH",
+                               use_internal_data =T)    ## using local build library "KEGG.db"
 
     #if(length(compKEGG@compareClusterResult$ID) > 0){
     if(length(compKEGG) > 0){
-    log_step("KEGG enrichment found; saving plot")
     p1 <- dotplot(compKEGG, showCategory = 1, title = "KEGG pathway enrichment") + labs(x = "") + scale_x_discrete(guide = guide_axis(angle = 45))
     ggsave(paste0(out_dir, sample_id, "_WNN_clusters_specific_DEGs_KEGG.pdf"), width = 12, height = 8)
-    } else {
-    log_step("KEGG enrichment empty for all clusters")
     }
 
      ## GO enrichment
-    compGO <- run_step(
-      "Cluster-specific DEGs GO enrichment",
-      compareCluster(geneCluster   = deg_list ,
-                     fun           = "enrichGO",
-                     OrgDb='org.Hs.eg.db',
-                     pvalueCutoff  = 0.05,
-                     pAdjustMethod = "BH")
-    )
+    compGO <- compareCluster(geneCluster   = deg_list ,
+                             fun           = "enrichGO",
+                             OrgDb='org.Hs.eg.db',
+                             pvalueCutoff  = 0.05,
+                             pAdjustMethod = "BH")
 
     #if(length(compGO@compareClusterResult$ID) > 0){
     if(length(compGO) > 0){
-    log_step("GO enrichment found; saving plot")
     p2 <- dotplot(compGO, showCategory = 2, title = "GO enrichment ") + labs(x = "") + scale_x_discrete(guide = guide_axis(angle = 45))
     ggsave(paste0(out_dir, sample_id, "_WNN_clusters_specific_DEGs_GO.pdf"), width = 12, height = 8)
-    } else {
-    log_step("GO enrichment empty for all clusters")
     }
 }
 
@@ -511,6 +447,10 @@ DoMultiBarHeatmap <- function (object,
 if(length(deg_list) > 0) {
 # Show we can sort sub-bars
 #DoHeatmap(scMultiome, features = deg_list, size = 4, angle = 0)
+deg_by_ct <- scMultiome[["SCT"]]@misc$DEGs_top5   # list: each element = top5 vector
+features_use <- unlist(deg_by_ct, use.names = FALSE)
+features_use <- features_use[!duplicated(features_use)]
+
 
 options(repr.plot.width = 10)
 DoMultiBarHeatmap(scMultiome, features = features_use, assay = 'SCT',
@@ -545,7 +485,6 @@ write.csv(Links(scMultiome), paste0(out_dir, sample_id, "_top5_WNN_clusters_spec
 }
 
 print("The analysis of WNN clusters specific DEGs has been successfully completed!!")
-
 }
 
 
@@ -562,15 +501,12 @@ DefaultAssay(scMultiome) <- "ATAC"
 saveRDS(scMultiome,file = paste0(out_dir, sample_id, "_scMultiome_before_motif.RDS"))
 print(scMultiome)
 # add motif information to scMultiome
-scMultiome <- run_step(
-  "Add motifs to ATAC assay",
-  AddMotifs(object = scMultiome,
-            genome = BSgenome.Hsapiens.UCSC.hg38,
-            pfm = pfm)
-)
+scMultiome <- AddMotifs(object = scMultiome,
+                        genome = BSgenome.Hsapiens.UCSC.hg38,
+                        pfm = pfm)
 
 ### DARs and motif enrichment
-clusters <- levels(scMultiome@meta.data$WNN_clusters_singler_annot)
+clusters <- unique(scMultiome@meta.data$WNN_clusters_singler_annot)
 cluster_cnt <- table(clusters)
 print(cluster_cnt)
 
@@ -586,7 +522,6 @@ atac_dar_names <- c()
 for (i in clusters)
 {
   n_i <- unname(cluster_cnt[as.character(i)])
-  log_step(paste0("DAR step cluster=", i, " cell_count=", ifelse(is.na(n_i), "NA", n_i)))
 
   if(is.na(n_i) || n_i <= 3){
 
@@ -631,13 +566,14 @@ for (i in clusters)
   }
 }
 
-names(atac_dar) <- names(atac_dar_motif) <-  clusters
+names(atac_dar) <- names(atac_dar_motif) <-  unique(clusters)
 enriched_motifs <- unique(enriched_motifs)        ## enriched_motif name
 
 #################################################
 ### pull out top 5 motifs per cluster for heatmap
 ### -log10(p-adj)
 {
+  L <- length(unique(clusters))
   motif_hm <- matrix(0,  length(clusters), length(enriched_motifs))
   colnames(motif_hm) <- enriched_motifs
   rownames(motif_hm) <- clusters
@@ -669,331 +605,11 @@ Misc(scMultiome[['ATAC']], slot = "DARs_motif_hm") <- motif_hm
 
 print("The analysis of WNN clusters specific DARs has been successfully completed!!")
 
-##############################################
-##  GRN: TF-gene gene regulatory network (GRN)
-##  Pando: https://quadbio.github.io/Pando/
-##############################################
-if(TRUE){
-
-#########################################
-## packages installed from "dependencies"
-#  data('phastConsElements20Mammals.UCSC.hg38')  ## in /Pando-1.0.0/data
-## pando curated motifs in /Pando-1.0.0/data
-
-data('motifs')      ## PFM for 1590 TFs
-data('motif2tf')
-data('SCREEN.ccRE.UCSC.hg38')    ## regions are contrained to SCREEN candidate cREs
-
-##################################################
-## infer GRN based on combined cluster-specific DEGs
-## regions are contained to SCREEN candidate cREs
-{
-  ## combined and unique DEGs
-## combined and unique DEGs
-  clusters <- levels(scMultiome)
-  L <- length(clusters)
-  all_degs <- vector()
-  combined_grn_list <- list()  ## graph list for culster specific DEGs
-
-  for(i in 1:L)
-  {
-
-    ## limited to cluster specific DEGs
-    all_degs <- c(all_degs, rownames(scMultiome[['SCT']]@misc$DEGs[[i]]))
-  }
-  all_degs <- unique(all_degs)
-
-  ## for testing
-  ## all_degs <- rownames(scMultiome@assays$RNA@counts)[1:1000]
-
-
-  #################
-  ## initialization
-  scMultiome_GRN <- initiate_grn(
-    scMultiome,
-    rna_assay = 'SCT',
-    peak_assay = 'ATAC',
-    regions = SCREEN.ccRE.UCSC.hg38)
-
-  ################
-  ## Scaning motif
-  # Will select candidate regulatory regions near genes
-
-  #  constrain to given gene list
-  if(FALSE){
-    patterning_genes <- read_tsv('patterning_genes.tsv')
-    pattern_tfs <- patterning_genes %>%
-      dplyr::filter(type=='Transcription factor') %>%
-      dplyr::pull(symbol)
-    motif2tf_use <- motif2tf %>%
-      dplyr::filter(tf %in% pattern_tfs)
-    motifs_use <- motifs[unique(motif2tf_use$motif)]
-    motif2tf_use
-  }
-
-
-  scMultiome_GRN <- find_motifs(
-    scMultiome_GRN,
-    pfm = motifs,
-    motif_tfs = motif2tf,
-    genome = BSgenome.Hsapiens.UCSC.hg38
-  )
-
-
-
-  ################
-  ## infering GRN
-  registerDoParallel(args$threads)
-
-  scMultiome_GRN  <- infer_grn(
-    scMultiome_GRN ,
-    peak_to_gene_method = 'Signac',
-    ## limited to cluster specific DARs as target genes
-    genes = all_degs,  # Combined DEGs
-    parallel = T
-  )
-
-  ## summary of inferred GRN
-  n_fit <- nrow(GetNetwork(scMultiome_GRN)@fit)
-
-if(n_fit >= 1) {
-    ## modules discovery
-    scMultiome_GRN <- find_modules(
-      scMultiome_GRN,
-      p_thresh = 0.05,
-      nvar_thresh = 2,
-      min_genes_per_module = 5,
-      rsq_thresh = 0.05
-    )
-
-  modules <- NetworkModules(scMultiome_GRN)@meta
-  write.csv(modules, paste0(out_dir, sample_id, "_combined_WNN_clusters_specific_DEGs_GRN_Modules.csv"))
-
-  featurs <- NetworkFeatures(scMultiome_GRN)
-
-    ##
-  modules_use <- NetworkModules(scMultiome_GRN)@meta %>%
-      dplyr::filter(target%in%featurs, tf%in%featurs)
-
-  n_modules <- nrow(modules_use)
-
-    if(n_modules > 2) {
-    scMultiome_GRN <- get_network_graph(scMultiome_GRN,
-                                            rna_assay = "SCT",       ## using SCT normalized RNA
-                                            umap_method = "none",    ## without UMAP embedding
-                                            graph_name = "Combined_DEGs_GRN")
-
-    ## saveRDS(scMultiome_GRN, paste0(out_dir, sample_id, "_scMultiome_GRN_for_testing.RDS"))
-
-    ## g <- plot_network_graph(scMultiome_GRN , layout='fr') + ggtitle ("Combined_Clusters_Specific_DEGs")
-    ## ggsave(paste0(out_dir, sample_id, "_combined_WNN_clusters_specific_DEGs_GRN.pdf"))
-    ## might encounter: Error in NetworkGraph.Network(GetNetwork(object, network = network), graph = graph) :
-    ## The requested graph "module_graph" does not exist.
-
-    ## customize the GRN
-    Combined_DEGs_GRN <-  NetworkGraph(scMultiome_GRN , graph='Combined_DEGs_GRN')  ## graph object
-
-    ## get edges or nodes by:
-    ## edges <- Combined_DEGs_GRN %>% activate(edges) %>% data.frame()
-    ## nodes <- Combined_DEGs_GRN %>% activate(nodes) %>% data.frame()
-    ## could modify tbl_graph separately and combine them afterward using:
-    ## GRN_new <- tbl_graph(nodes = new_nodes, edges = new_edges)
-
-    edge_color = c('-1'='darkgrey', '1'='orange')  ## darkgrey for repression and orange for activate
-    node_fill_color = c("0" = "lightgrey", "1" = "Brown")
-    node_color = c("0" = "white", "1" = "Black")
-
-    tf_list <- unique(modules$tf)
-    target_list <- unique(modules$target)
-    target_tf <- intersect(target_list, tf_list)
-
-    Combined_DEGs_GRN_mut <- Combined_DEGs_GRN %>%
-                             activate(edges) %>%
-                             mutate(dir = sign(estimate)) %>%
-                             activate(nodes) %>%
-                             mutate(name_label = ifelse(name %in% target_tf, name, ""), ## label tf_target
-                                    isTF = ifelse(name %in% tf_list, "1", "0"),
-                                    isTargetTF = ifelse(name %in% target_tf, "1", "0"))
-
-    saveRDS(Combined_DEGs_GRN_mut, paste0(out_dir, sample_id, "_combined_WNN_clusters_specific_DEGs_GRN.RDS"))
-    combined_grn_list[[1]] <- Combined_DEGs_GRN_mut
-
-    g <- ggraph(Combined_DEGs_GRN_mut, layout='fr') +
-         geom_edge_diagonal(aes(color=factor(dir)), width = 0.2) + scale_edge_color_manual(values=edge_color) +
-         geom_node_point(aes(size = centrality, fill = factor(isTF), color = factor(isTargetTF)), shape=21) +
-         scale_fill_manual(values = node_fill_color) + scale_color_manual(values = node_color) +
-         geom_node_text(aes(label = name_label, size = centrality*0.75), repel=T) +
-         theme_void() + theme(legend.position = "none") + ggtitle("Combined_DEGs_GRN")
-
-    ggsave(paste0(out_dir, sample_id, "_combined_WNN_clusters_specific_DEGs_GRN.pdf"))
-
-    }
- }
-
- print("The analysis of GRN based on combined cluster-specific DEGs has been successfully completed!!")
-
-}
-
-
-
-#######################################################
-## infer GRN based on cluster-specific DEGs per cluster
-## regions are contrained to SCREEN candidate cREs
-{
-  #################
-  ## initialization
-  ####################################
-  ## subsetting by WNN based clusters
-
-  clusters <- levels(scMultiome)
-  L <- length(clusters)
-  grn_list <- list()  ## graph list for culster specific DEGs
-  k = 1
-
-  for(i in 1:L)
-  {
-    print(i)
-
-    ## limited to cluster specific DEGs
-    n_deg <- nrow(scMultiome@assays$SCT@misc$DEGs[[i]])         ## number of DEGs
-
-    ## requiring cluster with at least 30 samples
-    ## based on https://leanscape.io/the-importance-of-identifying-the-right-sample-size-for-business-improvement/#:~:text=Why%20is%2030%20the%20minimum,as%20the%20sample%20size%20increases.
-    #if(cluster_cnt[i] < 30 | length(dar_regions) < 2 ){
-    if(length(n_deg) == 0){          ## for n_deg == Null
-
-      next
-
-    } else if (n_deg < 2){           ##  require at least more than 2 DEGs
-
-      next
-
-      } else {
-
-      ## cluster subseting
-      scMultiome_sub <- subset(scMultiome, idents = clusters[i])
-
-      scMultiome_GRN <- initiate_grn(
-        scMultiome_sub,
-        rna_assay = 'SCT',
-        peak_assay = 'ATAC',
-        regions = SCREEN.ccRE.UCSC.hg38)
-
-      # Will select candidate regulatory regions near genes
-      scMultiome_GRN <- find_motifs(
-        scMultiome_GRN,
-        pfm = motifs,
-        motif_tfs = motif2tf,
-        genome = BSgenome.Hsapiens.UCSC.hg38
-      )
-
-      ################
-      ## infering GRN
-      registerDoParallel(args$threads)
-
-      scMultiome_GRN  <- infer_grn(
-        scMultiome_GRN ,
-        peak_to_gene_method = 'Signac',
-        ## limited to cluster specific DARs as target genes
-        genes = rownames(scMultiome@assays$SCT@misc$DEGs[[i]]),  # target genes to consider
-        parallel = T
-      )
-
-      ## summary of inferred GRN
-      n_fit <- nrow(GetNetwork(scMultiome_GRN)@fit)
-
-      if(n_fit < 1) {
-        next
-      } else {
-        ## modules discovery
-        scMultiome_GRN <- find_modules(
-          scMultiome_GRN,
-          p_thresh = 0.1,
-          nvar_thresh = 2,
-          min_genes_per_module = 1,
-          rsq_thresh = 0.05
-        )
-
-        modules <- NetworkModules(scMultiome_GRN)@meta
-        write.csv(modules, paste0(out_dir, sample_id, "_WNN_cluster_", clusters[i], "_specific_DEGs_GRN_Modules.csv"))
-
-        featurs <- NetworkFeatures(scMultiome_GRN)
-
-        ##
-        modules_use <- NetworkModules(scMultiome_GRN)@meta %>%
-          dplyr::filter(target%in%featurs, tf%in%featurs)
-
-        n_modules <- nrow(modules_use)
-        if(n_modules <= 2) {
-          next
-        } else {
-
-          scMultiome_GRN <- get_network_graph(scMultiome_GRN,
-                                              rna_assay = "SCT",       ## using SCT normalized RNA
-                                              umap_method = "none",    ## without UMAP embedding
-                                              graph_name = "Specific_DEGs_GRN")
-
-          ## g <-  plot_network_graph(scMultiome_GRN, layout='fr')  + ggtitle(paste0("Cluster_",clusters[i], "_specific_DEGs"))
-          ## ggsave(paste0(out_dir, sample_id, "_WNN_cluster_",clusters[i], "_specific_DEGs_GRN.pdf"))
-
-          ## customize the GRN
-          Specific_DEGs_GRN <-  NetworkGraph(scMultiome_GRN , graph='Specific_DEGs_GRN')  ## graph object
-
-          edge_color = c('-1'='darkgrey', '1'='orange')  ## darkgrey for repression and orange for activate
-          node_fill_color = c("0" = "lightgrey", "1" = "Brown")
-          node_color = c("0" = "white", "1" = "Black")
-
-          tf_list <- unique(modules$tf)
-          target_list <- unique(modules$target)
-          target_tf <- intersect(target_list, tf_list)
-
-          Specific_DEGs_GRN_mut <- Specific_DEGs_GRN %>%
-            activate(edges) %>%
-            mutate(dir = sign(estimate)) %>%
-            activate(nodes) %>%
-            mutate(name_label = ifelse(name %in% target_tf, name, ""), ## label tf_target
-                   isTF = ifelse(name %in% tf_list, "1", "0"),
-                   isTargetTF = ifelse(name %in% target_tf, "1", "0"))
-
-          g <- ggraph(Specific_DEGs_GRN_mut, layout='fr') +
-            geom_edge_diagonal(aes(color=factor(dir)), width = 0.2) + scale_edge_color_manual(values=edge_color) +
-            geom_node_point(aes(size = centrality, fill = factor(isTF), color = factor(isTargetTF)), shape=21) +
-            scale_fill_manual(values = node_fill_color) + scale_color_manual(values = node_color) +
-            geom_node_text(aes(label = name, size = centrality*0.75), repel=T) +
-            theme_void() + theme(legend.position = "none") + ggtitle(paste0("Cluster_", clusters[i], "_specific_DEGs_GRN"))
-
-          ggsave(paste0(out_dir, sample_id, "_WNN_cluster_", clusters[i], "_specific_DEGs_GRN.pdf"))
-
-          grn_list[[k]] <- Specific_DEGs_GRN_mut
-          names(grn_list)[k] <- paste0("WNN_cluster_", clusters[i], "_specific_DEGs_GRN")
-          k = k + 1
-        }
-
-      }
-
-    }
-
-  }
-
-  # saveRDS(grn_list, paste0(sample_id, "_cluster_specific_DEGs_GRN.RDS"))
-  print("The analysis of GRN based on cluster-specific DEGs has been successfully completed!!")
-
-}
-
-
-#######################################################
-## adding to scMutiome object
-Misc(scMultiome, slot = "Combined_DEGs_GRN") <- combined_grn_list  ## list to save as tbl_graph object
-Misc(scMultiome, slot = "Cluster_DEGs_GRN") <- grn_list
-
-print("The gene regulatory network has been successfully completed!!")
-
-}
 
 ################
-## output Rdata
+## output Rdata for GRN stage input
 ################
-saveRDS(scMultiome, file = paste0(out_dir, sample_id, "_extended_seurat_object.RDS"))
-write.csv(scMultiome@meta.data,  file = paste0(out_dir, sample_id, "_extended_meta_data.csv"))
+saveRDS(scMultiome, file = paste0(out_dir, sample_id, "_extended_pre_grn_seurat_object.RDS"))
+write.csv(scMultiome@meta.data,  file = paste0(out_dir, sample_id, "_extended_pre_grn_meta_data.csv"))
 
-print("The main seurat has been successfully executed !!")
+print("The pre-GRN extended analyses have been successfully executed !!")

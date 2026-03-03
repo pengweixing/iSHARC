@@ -51,6 +51,9 @@ comm_res <- args$community_resolution
 
 ## output dir
 out_dir <- paste0(getwd(), "/integrated_samples/wnn/", integr_meth, "/") ## with forward slash at the end
+if (!dir.exists(out_dir)) {
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+}
 
 }
 
@@ -119,9 +122,26 @@ if(integr_meth == "anchor"){
   scMultiome <- FindMultiModalNeighbors(scMultiome, reduction.list = list("harmony", "harmony_atac"), dims.list = list(1:dims_n, 2:dims_n), k.nn  = knn_k)
 }
 
+## standardize modality weight column names across Seurat versions/reduction names
+meta_cols <- colnames(scMultiome@meta.data)
+rna_weight_candidates <- c("RNA_integrated.weight", "RNAintegrated.weight", "RNA.weight", "pca.weight", "harmony.weight")
+atac_weight_candidates <- c("ATAC_integrated.weight", "ATAC.weight", "lsi_integrated.weight", "harmony_atac.weight")
+rna_weight_col <- rna_weight_candidates[rna_weight_candidates %in% meta_cols][1]
+atac_weight_col <- atac_weight_candidates[atac_weight_candidates %in% meta_cols][1]
+
+if (is.na(rna_weight_col) || !nzchar(rna_weight_col)) {
+  stop("Cannot find RNA modality weight column. Checked: ", paste(rna_weight_candidates, collapse = ", "))
+}
+if (is.na(atac_weight_col) || !nzchar(atac_weight_col)) {
+  stop("Cannot find ATAC modality weight column. Checked: ", paste(atac_weight_candidates, collapse = ", "))
+}
+
+scMultiome$RNA_integrated.weight <- scMultiome[[rna_weight_col]][, 1]
+scMultiome$ATAC_integrated.weight <- scMultiome[[atac_weight_col]][, 1]
+
 ############
 ## Apply WNN
-scMultiome <- RunUMAP(scMultiome, nn.name = "weighted.nn", reduction.name = "umap_wnn")
+scMultiome <- RunUMAP(scMultiome, nn.name = "weighted.nn", reduction.name = "umap_wnn", reduction.key = "umapwnn_")
 scMultiome <- FindClusters(scMultiome, graph.name = "wsnn", algorithm = 3, resolution = comm_res, verbose = FALSE)
 
 #scMultiome[["multiple_samples_WNN_clusters"]]  <- scMultiome$wsnn_res.0.8   ## wsnn_res.0.8 has been overwritten

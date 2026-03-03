@@ -47,6 +47,9 @@ comm_res <- args$community_resolution
 
 ## output dir
 out_dir <- paste0(getwd(), "/integrated_samples/rna/") ## with forward slash at the end
+if (!dir.exists(out_dir)) {
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+}
 
 ## read in aggregation list
 sample_list <- read.table(args$samples_integration , header = T)
@@ -98,6 +101,7 @@ for(i in 1: length(sample_ids))
 ## integrate snRNA-seq data from multiple samples
 #################################################
 {
+  integrated_assay_name <- "RNAintegrated"
 
   #############################
   ## merge without integration
@@ -111,13 +115,22 @@ for(i in 1: length(sample_ids))
                         )
 
     ## RNA_merged differ from existing SCT
-    rna_merged <- SCTransform(rna_merged, assay = 'RNA', new.assay.name = 'RNA_integrated')
+    rna_merged <- SCTransform(rna_merged, assay = 'RNA', new.assay.name = integrated_assay_name)
     rna_merged <- RunPCA(rna_merged, npcs = dims_n, verbose = FALSE)
     rna_merged <- RunUMAP(rna_merged, dims = 1:dims_n, verbose = FALSE)
-    rna_merged <- FindNeighbors(rna_merged, dims = 1:dims_n, reduction = "pca", k.param = knn_k) %>% FindClusters(resolution = comm_res)
-
-    ## generalized the resolution
-    rna_merged$RNA_integrated_clusters <- rna_merged[[paste0("RNA_integrated_snn_res.", comm_res)]]
+    rna_merged <- FindNeighbors(
+      rna_merged,
+      dims = 1:dims_n,
+      reduction = "pca",
+      k.param = knn_k,
+      graph.name = "RNA_integrated_snn"
+    )
+    rna_merged <- FindClusters(
+      rna_merged,
+      graph.name = "RNA_integrated_snn",
+      cluster.name = "RNA_integrated_clusters",
+      resolution = comm_res
+    )
 
     saveRDS(rna_merged, paste0(out_dir, "RNA_integrated_by_merging.RDS"))
   }
@@ -133,15 +146,23 @@ for(i in 1: length(sample_ids))
     rna_harmonized <- RunHarmony(rna_merged,
                                  group.by.vars = c("sample_id"),
                                  reduction = "pca",
-                                 assay.use = "RNA_integrated",
+                                 assay.use = integrated_assay_name,
                                  reduction.save = "harmony")
 
     rna_harmonized <- RunUMAP(rna_harmonized, reduction = "harmony", dims = 1:dims_n, verbose = FALSE)
-    rna_harmonized <- FindNeighbors(rna_harmonized, reduction = "harmony", dims = 1:dims_n, k.param = knn_k) %>%
-                      FindClusters(resolution = comm_res)        ## clusters list in  "RNA_integrated_snn_res.0.8", which is differ from rna_merged$RNA_integrated_snn_res.0.8
-
-    ## generalized the resolution
-    rna_harmonized$RNA_integrated_clusters <- rna_harmonized[[paste0("RNA_integrated_snn_res.", comm_res)]]
+    rna_harmonized <- FindNeighbors(
+      rna_harmonized,
+      reduction = "harmony",
+      dims = 1:dims_n,
+      k.param = knn_k,
+      graph.name = "RNA_integrated_snn"
+    )
+    rna_harmonized <- FindClusters(
+      rna_harmonized,
+      graph.name = "RNA_integrated_snn",
+      cluster.name = "RNA_integrated_clusters",
+      resolution = comm_res
+    )
 
     saveRDS(rna_harmonized, paste0(out_dir, "RNA_integrated_by_harmony.RDS"))
   }
@@ -184,14 +205,24 @@ for(i in 1: length(sample_ids))
                                           dims = 1:dims_n)
 
     ## Adding "SCT_Integrated" Assay
-    rna_anchored <- IntegrateData(anchorset = rna_anchors, new.assay.name = "RNA_integrated", dims = 1:dims_n)
+    rna_anchored <- IntegrateData(anchorset = rna_anchors, new.assay.name = integrated_assay_name, dims = 1:dims_n)
+    DefaultAssay(rna_anchored) <- integrated_assay_name
     rna_anchored <- ScaleData(rna_anchored, verbose = FALSE)
     rna_anchored <- RunPCA(rna_anchored, npcs = dims_n, verbose = FALSE)
     rna_anchored <- RunUMAP(rna_anchored, dims = 1:dims_n, verbose = FALSE)
-    rna_anchored <- FindNeighbors(rna_anchored, dims = 1:dims_n, reduction = "pca", k.param = knn_k) %>% FindClusters(resolution = comm_res)
-
-    ## generalized the resolution
-    rna_anchored$RNA_integrated_clusters <- rna_anchored[[paste0("RNA_integrated_snn_res.", comm_res)]]
+    rna_anchored <- FindNeighbors(
+      rna_anchored,
+      dims = 1:dims_n,
+      reduction = "pca",
+      k.param = knn_k,
+      graph.name = "RNA_integrated_snn"
+    )
+    rna_anchored <- FindClusters(
+      rna_anchored,
+      graph.name = "RNA_integrated_snn",
+      cluster.name = "RNA_integrated_clusters",
+      resolution = comm_res
+    )
 
     saveRDS(rna_anchored, paste0(out_dir, "RNA_integrated_by_anchors.RDS"))
   }

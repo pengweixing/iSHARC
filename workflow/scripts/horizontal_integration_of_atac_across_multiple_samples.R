@@ -23,8 +23,6 @@ parser <- ArgumentParser()
 ## by default ArgumentParser will add an help option
 parser$add_argument("-si", "--samples_integration", required=TRUE,
                     help = "list of sample IDs to be aggregated in TSV format")
-parser$add_argument("-pipe", "--pipe_dir", required=TRUE,
-                    help = "The PATH to iSHARC pipeline, which local dependences included")
 
 parser$add_argument("-knn_k", "--knn_k_param", type = "integer", default = 20,
                     help = "k for the k-nearest neighbor algorithm")
@@ -48,12 +46,13 @@ comm_res <- args$community_resolution
 
 ## output dir
 out_dir <- paste0(getwd(), "/integrated_samples/atac/") ## with forward slash at the end
+if (!dir.exists(out_dir)) {
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+}
 
 ## read in aggregation list
 sample_list <- read.table(args$samples_integration , header = T)
 sample_ids <- sample_list$sample_id
-
-pipe_dir <- args$pipe_dir
 
 }
 
@@ -98,10 +97,16 @@ for(i in 1: length(sample_ids))    # for testing
 }
 
 ## reference data for scATAC-seq data
-anno_rds <- paste0(pipe_dir, "/data/EnsDb.Hsapiens.v86_2UCSC_hg38.RDS")
+anno_rds_candidates <- c("/data/EnsDb.Hsapiens.v86_2UCSC_hg38.RDS")
+anno_rds <- anno_rds_candidates[file.exists(anno_rds_candidates)][1]
+if (is.na(anno_rds) || !nzchar(anno_rds)) {
+  stop(
+    "Cannot find EnsDb.Hsapiens.v86_2UCSC_hg38.RDS. Checked: ",
+    paste(anno_rds_candidates, collapse = ", ")
+  )
+}
 anno_gene <- readRDS(anno_rds)
 genome_info <- seqinfo(anno_gene)
-
 }
 
 ###########################################################################
@@ -156,30 +161,6 @@ genome_info <- seqinfo(anno_gene)
       }
     }
 
-    ## Function Re-quantify integrated peaks in each sample
-    ## for local testing
-    if(FALSE){
-      for(i in 1: length(sample_ids))
-      {
-
-        fpath_local <- paste0(getwd(), "/arc_count/", sample_ids[i], "/outs/atac_fragments.tsv.gz" )
-        fragments_local <- CreateFragmentObject(path = fpath_local, cells = colnames(seurat_object_list[[i]]))
-
-        peaks_count <- FeatureMatrix(
-                        #fragments = Fragments(x),    ## for cluster
-                        fragments = fragments_local,        ##  for local testing
-                        features  = peaks_merged,
-                        cells = colnames(seurat_object_list[[i]]))
-
-        seurat_object_list[[i]][["ATAC_integrated"]] <- CreateChromatinAssay(counts = peaks_count,
-                                                                            genome = genome_info,
-                                                                            fragments = fragments_local,
-                                                                            min.cells = 0,
-                                                                            min.features = -1,        ##  set as to negative to ensure same number of cells!!
-                                                                            annotation = anno_gene)
-      }
-    }
-
     ###########################
     ## merge samples
     ## switch to ATAC_integrated
@@ -206,8 +187,6 @@ genome_info <- seqinfo(anno_gene)
     saveRDS(atac_merged, paste0(out_dir, "ATAC_integrated_by_merging.RDS"))
 
     print("Multiple samples have been successfully merged!!")
-
-
   }
 
   #####################

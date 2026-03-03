@@ -1,16 +1,36 @@
-workdir: config['work_dir']
-
-## read in sample list
 import os
 import pandas as pd
 
 ## paths for pipeline and/or reference data
+# infer pipeline root from Snakefile location unless explicitly provided
+pipe_dir = os.path.abspath(config.get("pipe_dir", os.path.join(workflow.basedir, "..")))
+config["pipe_dir"] = pipe_dir
+
+def _resolve_from_pipe_dir(path):
+    return path if os.path.isabs(path) else os.path.abspath(os.path.join(pipe_dir, path))
+
+config["work_dir"] = _resolve_from_pipe_dir(config["work_dir"])
+config["samples"] = _resolve_from_pipe_dir(config["samples"])
+config["samples_integr"] = _resolve_from_pipe_dir(config["samples_integr"])
+containers_dir = _resolve_from_pipe_dir(config.get("containers_dir", os.path.join(pipe_dir, "containers")))
+config["containers_dir"] = containers_dir
+
+def get_container_image(local_filename, remote_uri):
+    local_path = os.path.join(containers_dir, local_filename)
+    return local_path if os.path.exists(local_path) else remote_uri
+
+ISHARC_R_CONTAINER = get_container_image(
+    "isharc-r_4.4.3_seurat_v2.1.5.sif",
+    "docker://pengweixing/isharc-r:4.4.3_seurat_v2.1.5",
+)
+CELLRANGER_ARC_CONTAINER = get_container_image(
+    "docker-cellranger-arc.sif",
+    "docker://litd/docker-cellranger-arc",
+)
+
+workdir: config["work_dir"]
+
 work_dir = config["work_dir"]
-# infer pipe_dir from Snakefile location if not provided
-pipe_dir = config.get("pipe_dir")
-if not pipe_dir:
-    pipe_dir = os.path.abspath(os.path.join(workflow.basedir, ".."))
-    config["pipe_dir"] = pipe_dir
 samples_list = config["samples"]
 samples_integr = config["samples_integr"]
 

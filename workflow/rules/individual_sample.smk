@@ -1,3 +1,5 @@
+_pipe_dir_in_container = config["pipe_dir"]
+
 #########################################################################
 ## vertical integration of matched RNA and ATAC for each individual sample
 ## The analyses includes:
@@ -12,7 +14,8 @@ rule initializaion_of_individual_sample:
     output:
         "individual_samples/{sample}/{sample}_initial_seurat_object.RDS"
     params:
-        pipe_dir = config["pipe_dir"],
+        pipe_dir = _pipe_dir_in_container,
+        script = f"{config['pipe_dir']}/workflow/scripts/initialization_of_individual_sample.R",
         min_RNA = config["second_round_cutoffs"]["nCount_RNA_min"],
         max_RNA = config["second_round_cutoffs"]["nCount_RNA_max"],
         min_ATAC = config["second_round_cutoffs"]["nCount_ATAC_min"],
@@ -23,10 +26,10 @@ rule initializaion_of_individual_sample:
     log:
         "logs/{sample}_initialization.log"
     container:
-        "docker://pengweixing/isharc-r:4.4.3_seurat_v2.1.5"
+        ISHARC_R_CONTAINER
     shell:
         "(mkdir -p individual_samples/{wildcards.sample} && "
-        "Rscript --vanilla {params.pipe_dir}/workflow/scripts/initialization_of_individual_sample.R "
+        "Rscript --vanilla {params.script} "
         "  --sample_id {wildcards.sample} --feature_barcode_matrix {input.fbm} "
         "  --per_barcode_metrics {input.pbm}  --atac_file {input.atac} "
         "  --min_nCount_RNA {params.min_RNA} "
@@ -54,7 +57,8 @@ rule vertical_integration_of_individual_sample:
     output:
         "individual_samples/{sample}/{sample}_vertically_integrated_seurat_object.RDS"
     params:
-        pipe_dir = config["pipe_dir"],
+        pipe_dir = _pipe_dir_in_container,
+        script = f"{config['pipe_dir']}/workflow/scripts/vertical_integration_of_individual_sample.R",
         srf = config["second_round_filter"],
         rcc = config["regress_cell_cycle"],
         fgm = config["future_globals_maxSize"],
@@ -73,10 +77,10 @@ rule vertical_integration_of_individual_sample:
     log:
         "logs/{sample}_vertical_integration.log"
     container:
-        "docker://pengweixing/isharc-r:4.4.3_seurat_v2.1.5"
+        ISHARC_R_CONTAINER
     shell:
         "(mkdir -p individual_samples/{wildcards.sample} && "
-        "Rscript --vanilla {params.pipe_dir}/workflow/scripts/vertical_integration_of_individual_sample.R "
+        "Rscript --vanilla {params.script} "
         "  --threads {threads} "
         "  --future_globals_maxSize {params.fgm} "
         "  --sample_id {wildcards.sample}  "
@@ -102,27 +106,53 @@ rule vertical_integration_of_individual_sample:
 ##      * Identify cluster specific DARs and enriched motif/TFs
 ##      * Gene regulatory network analysis
 ################################################################################
-rule extended_analyses_of_individual_sample:
+rule extended_pre_grn_analyses_of_individual_sample:
     input:
         "individual_samples/{sample}/{sample}_vertically_integrated_seurat_object.RDS"
     output:
-        "individual_samples/{sample}/{sample}_extended_seurat_object.RDS"
+        "individual_samples/{sample}/{sample}_extended_pre_grn_seurat_object.RDS"
     params:
-        pipe_dir = config["pipe_dir"],
+        pipe_dir = _pipe_dir_in_container,
+        script = f"{config['pipe_dir']}/workflow/scripts/extended_pre_grn_analyses_of_individual_sample.R",
         fgm = config["future_globals_maxSize"]
     threads:
         config["threads"]
     log:
-        "logs/{sample}_extended_analyses.log"
+        "logs/{sample}_extended_pre_grn_analyses.log"
     container:
-        "docker://pengweixing/isharc-r:4.4.3_seurat_v2.1.5"
+        ISHARC_R_CONTAINER
     shell:
         "(mkdir -p individual_samples/{wildcards.sample} && "
-        "Rscript --vanilla {params.pipe_dir}/workflow/scripts/extended_analyses_of_individual_sample.R "
+        "Rscript --vanilla {params.script} "
         "  --threads {threads} "
         "  --future_globals_maxSize {params.fgm} "
         "  --sample_id {wildcards.sample}  "
         "  --vertically_integrated_seurat_object  {input} "
+        "  --pipe_dir {params.pipe_dir}) 2> {log}"
+
+
+rule grn_analyses_of_individual_sample:
+    input:
+        "individual_samples/{sample}/{sample}_extended_pre_grn_seurat_object.RDS"
+    output:
+        "individual_samples/{sample}/{sample}_extended_seurat_object.RDS"
+    params:
+        pipe_dir = _pipe_dir_in_container,
+        script = f"{config['pipe_dir']}/workflow/scripts/grn_analyses_of_individual_sample.R",
+        fgm = config["future_globals_maxSize"]
+    threads:
+        config["threads"]
+    log:
+        "logs/{sample}_grn_analyses.log"
+    container:
+        ISHARC_R_CONTAINER
+    shell:
+        "(mkdir -p individual_samples/{wildcards.sample} && "
+        "Rscript --vanilla {params.script} "
+        "  --threads {threads} "
+        "  --future_globals_maxSize {params.fgm} "
+        "  --sample_id {wildcards.sample}  "
+        "  --extended_pre_grn_seurat_object  {input} "
         "  --pipe_dir {params.pipe_dir}) 2> {log}"
 
 
@@ -135,17 +165,19 @@ rule html_report_of_individual_sample:
     output:
         "individual_samples/{sample}/{sample}_QC_and_Primary_Results.html"
     params:
-        pipe_dir = config["pipe_dir"],
-        work_dir = config["work_dir"]
+        pipe_dir = _pipe_dir_in_container,
+        work_dir = config["work_dir"],
+        report_rmd_template = f"{config['pipe_dir']}/workflow/scripts/qc_and_primary_results_report_of_individual_sample.Rmd",
+        report_script = f"{config['pipe_dir']}/workflow/scripts/qc_and_primary_results_report_of_individual_sample.R"
     log:
         "logs/{sample}_html_report.log"
     container:
-        "docker://pengweixing/isharc-r:4.4.3_seurat_v2.1.5"
+        ISHARC_R_CONTAINER
     shell:
         ## generating qc report named by sample id
-        "(cp {params.pipe_dir}/workflow/scripts/qc_and_primary_results_report_of_individual_sample.Rmd "
+        "(cp {params.report_rmd_template} "
         "    {params.work_dir}/individual_samples/{wildcards.sample}/{wildcards.sample}_QC_and_Primary_Results.Rmd && "
-        "Rscript --vanilla {params.pipe_dir}/workflow/scripts/qc_and_primary_results_report_of_individual_sample.R "
+        "Rscript --vanilla {params.report_script} "
         "  --sample_id {wildcards.sample} "
         "  --extended_analyses_seurat_object {params.work_dir}/{input} "
         "  --report_rmd_file {params.work_dir}/individual_samples/{wildcards.sample}/{wildcards.sample}_QC_and_Primary_Results.Rmd "

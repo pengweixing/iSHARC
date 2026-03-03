@@ -1,4 +1,4 @@
-# iSHARC: <ins>I</ins>ntegrating <ins>s</ins>cMultiome data for <ins>h</ins>eterogeneity <ins>a</ins>nd <ins>r</ins>egulatory analysis in <ins>c</ins>ancer (v1.0.0)
+# iSHARC: <ins>I</ins>ntegrating <ins>s</ins>cMultiome data for <ins>h</ins>eterogeneity <ins>a</ins>nd <ins>r</ins>egulatory analysis in <ins>c</ins>ancer (v1.1.0)
 
 
 ## Introduction
@@ -20,17 +20,96 @@ This schematic diagram shows you how pipeline will be working:
 
 
 ## Installation
-1) Ensure you have a Conda-based Python3 distribution installed (e.g.,the [Miniconda](https://docs.conda.io/en/latest/miniconda.html)). If your Conda version is earlier than v23.10.0, it is recommended to install [Mamba](https://github.com/mamba-org/mamba) for improved performance and reliability
-
-	```bash
-	$ conda install -n base -c conda-forge mamba
-	```
-
-2) Git clone this pipeline.
+1) Git clone this pipeline.
 	```bash
 	$ cd
-	$ git clone https://github.com/yzeng-lol/iSHARC
+	$ git clone https://github.com/pengweixing/iSHARC.git
 	```
+
+2) Configure the input files
+
+	The repository provides example templates under `test/`:
+
+	- `test/samples_template.tsv`
+	- `test/samples_integration_template.tsv`
+	- `test/config_template.yaml`
+
+	`samples_template.tsv` defines the per-sample input data. It is a tab-delimited file with the following columns:
+
+	- `sample_id`: sample name used by the workflow for output file naming
+	- `sample_seq_id`: sequencing/library ID used when preparing Cell Ranger ARC input libraries
+	- `gex_seq_path`: path to the gene expression FASTQ directory
+	- `atac_seq_path`: path to the ATAC FASTQ directory
+	- `arc_outs_path`: path to an existing `cellranger-arc count` `outs/` directory when reusing a precomputed ARC result
+
+	Example:
+
+	```tsv
+	sample_id	sample_seq_id	gex_seq_path	atac_seq_path	arc_outs_path
+	sampleA	sampleA	/path/to/sampleA/gex	/path/to/sampleA/atac	false
+	sampleB	sampleB	/path/to/sampleB/gex	/path/to/sampleB/atac	/path/to/sampleB/arc_count/outs
+	```
+
+	How `arc_perf` affects `samples_template.tsv`:
+
+	- `arc_perf: false`
+	  - the workflow starts from FASTQ files
+	  - `gex_seq_path` and `atac_seq_path` must point to valid FASTQ directories
+	  - `arc_outs_path` is not used and can be set to `false`
+	- `arc_perf: true`
+	  - the workflow reuses an existing Cell Ranger ARC result
+	  - `arc_outs_path` must point to the existing `outs/` directory
+	  - `gex_seq_path` and `atac_seq_path` are not used by the ARC counting rule
+
+	`samples_integration_template.tsv` defines which samples should be integrated in the multiple-sample workflow. It is also tab-delimited. The required column is:
+
+	- `sample_id`: must match the `sample_id` values in `samples_template.tsv`
+
+	Example:
+
+	```tsv
+	sample_id
+	sampleA
+	sampleB
+	```
+
+	`config_template.yaml` controls the workflow behavior. The main fields are:
+
+	- `arc_perf`: `false` to run `cellranger-arc count` from FASTQ, `true` to reuse existing ARC `outs/`
+	- `arc_ref`: path to the Cell Ranger ARC reference directory
+	- `samples`: path to `samples_template.tsv`
+	- `samples_integr`: path to `samples_integration_template.tsv`
+	- `work_dir`: working directory where outputs will be written
+	- `containers_dir`: directory containing pre-downloaded `.sif` images, optional but recommended for offline HPC nodes
+	- `integration`: `True` or `False`; whether to run the multiple-sample integration workflow
+	- `threads`: CPU threads used by analysis rules
+	- `future_globals_maxSize`: memory limit for R `future`, in GB
+	- `cellranger_create_bam`: whether Cell Ranger ARC should create BAM output
+	- `cellranger_localcores`: CPU cores given to Cell Ranger ARC
+	- `cellranger_localmem`: memory in GB given to Cell Ranger ARC
+	- `second_round_filter`: whether to apply the second-round QC filter
+	- `second_round_cutoffs`: per-metric QC thresholds used in second-round filtering
+	- `regress_cell_cycle`: whether to regress out cell-cycle effects in RNA analysis
+	- `clustering_params`: KNN/UMAP/clustering settings used in downstream analysis
+
+	A minimal config example:
+
+	```yaml
+	arc_perf: false
+	arc_ref: /path/to/refdata-cellranger-arc-GRCh38-2024-A
+	samples: /path/to/samples_template.tsv
+	samples_integr: /path/to/samples_integration_template.tsv
+	work_dir: /path/to/workdir
+	containers_dir: /path/to/iSHARC/containers
+	integration: True
+	threads: 12
+	future_globals_maxSize: 50
+	cellranger_create_bam: true
+	cellranger_localcores: 8
+	cellranger_localmem: 48
+	```
+
+	Use absolute paths in `config.yaml` and the TSV files. This is the most reliable setup for local runs and HPC execution.
 
 3) Run on a local PC
 

@@ -23,8 +23,8 @@ This schematic diagram shows you how pipeline will be working:
 
 ### Download this pipeline
 ```bash
-$ wget https://github.com/pengweixing/iSHARC/releases/download/v1.1.0/iSHARC_v1.1.0.tar.gz
-$ tar -xzf iSHARC_v1.1.0.tar.gz
+wget https://github.com/pengweixing/iSHARC/releases/download/v1.1.0/iSHARC_v1.1.0.tar.gz
+tar -xzf iSHARC_v1.1.0.tar.gz
 ```
 
 ### Configure the input files
@@ -131,25 +131,25 @@ The workflow can also be run on a local workstation or server. The current rules
 A minimal local run looks like this:
 
 ```bash
-$ SNAKEFILE="/path/to/iSHARC/workflow/Snakefile"
-$ CODE_ROOT="$(cd "$(dirname "$SNAKEFILE")/../.." && pwd)"
-$ REFDATA_DIR="/path/to/refdata-cellranger-arc-GRCh38-2024-A"
-$ RAWDATA_DIR="/path/to/raw_data"
+SNAKEFILE="/path/to/iSHARC/workflow/Snakefile"
+CODE_ROOT="$(cd "$(dirname "$SNAKEFILE")/../.." && pwd)"
+REFDATA_DIR="/path/to/refdata-cellranger-arc-GRCh38-2024-A"
+RAWDATA_DIR="/path/to/raw_data"
 
-$ snakemake \
-    --snakefile "$SNAKEFILE" \
-    --configfile /path/to/config.yaml \
-    --config "pipe_dir=$CODE_ROOT/iSHARC" \
-    --use-singularity \
-    --singularity-args "--bind $CODE_ROOT --bind $RAWDATA_DIR --bind $REFDATA_DIR" \
-    --rerun-triggers mtime \
-    --cores 12
+snakemake \
+  --snakefile "$SNAKEFILE" \
+  --configfile /path/to/config.yaml \
+  --config "pipe_dir=$CODE_ROOT/iSHARC" \
+  --use-singularity \
+  --singularity-args "--bind $CODE_ROOT --bind $RAWDATA_DIR --bind $REFDATA_DIR" \
+  --rerun-triggers mtime \
+  --cores 12
 ```
 
 If your local machine does not have internet access, you can pre-download the container images first:
 
 ```bash
-$ bash /path/to/iSHARC/workflow/scripts/download_containers.sh /path/to/iSHARC/containers
+bash /path/to/iSHARC/workflow/scripts/download_containers.sh /path/to/iSHARC/containers
 ```
 
 Then set `containers_dir` in your config YAML to that directory.
@@ -203,7 +203,7 @@ snakemake \
 To submit it:
 
 ```bash
-$ sbatch run_isharc.slurm
+sbatch run_isharc.slurm
 ```
 
 If your compute nodes cannot access the internet, download the required container images in advance:

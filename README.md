@@ -240,40 +240,5 @@ bash /path/to/iSHARC/workflow/scripts/download_containers.sh /path/to/iSHARC/con
 
 Then set `containers_dir` in your config YAML to that directory. The workflow will automatically use these local `.sif` images when present, and only fall back to `docker://...` when the local image is missing.
 
-To submit each rule as a separate SLURM job with Snakemake 9, use a SLURM profile:
-
-```bash
-snakemake \
-  --profile /path/to/iSHARC/workflow/profiles/slurm \
-  --snakefile /path/to/iSHARC/workflow/Snakefile \
-  --configfile /path/to/config.yaml \
-  --config "pipe_dir=$CODE_ROOT/iSHARC" \
-  --use-singularity \
-  --singularity-args "--bind $CODE_ROOT --bind $RAWDATA_DIR --bind $REFDATA_DIR" \
-  --rerun-triggers mtime \
-  --jobs 20
-```
-
-In this mode:
-
-- `--jobs 20` controls how many SLURM jobs Snakemake may submit in parallel
-- `--profile` loads SLURM executor settings and per-rule resources from [workflow/profiles/slurm/config.yaml](./workflow/profiles/slurm/config.yaml)
-- `runtime` in Snakemake resources uses integer minutes (for example, `48:00:00` becomes `2880`)
-- install `snakemake-executor-plugin-slurm` in the active environment, otherwise `--executor slurm` will not be available
-- `--use-singularity` and `--singularity-args` are still needed because the workflow uses containerized rules
-- `CODE_ROOT` should be the repository root, and `REFDATA_DIR` should point to your Cell Ranger ARC reference directory
-
-Notes:
-
-- `sbatch` is for SLURM. If your cluster uses SLURM, this is the correct submission command.
-- `pipe_dir` should point to the pipeline root inside the repository, typically `.../iSHARC`.
-- `containers_dir` should point to a shared directory containing pre-downloaded `.sif` images if your compute nodes are offline.
-- `--singularity-args` should bind the repository root, the raw-data root directory used in `samples_template.tsv`, and any required reference directories so containerized rules can see the scripts and inputs.
-- `--rerun-triggers mtime` is recommended to avoid unnecessary reruns caused by parameter/path metadata changes.
-- If you only want a specific target, append it at the end of the `snakemake` command, for example:
-
-```bash
-individual_samples/sampleA/sampleA_QC_and_Primary_Results.html
-```
 
 For more details about cluster execution, refer to the [Snakemake documentation](https://snakemake.readthedocs.io/en/stable/executing/cluster.html).

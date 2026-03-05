@@ -1,0 +1,64 @@
+executor: slurm
+jobs: 20
+
+default-resources:
+  - mem_mb=10000
+  - runtime=1440
+  - slurm_partition=all,himem
+
+set-threads:
+  - prep_library_file=1
+  - cellranger_arc_count=16
+  - initializaion_of_individual_sample=8
+  - vertical_integration_of_individual_sample=12
+  - extended_pre_grn_analyses_of_individual_sample=8
+  - grn_analyses_of_individual_sample=12
+  - html_report_of_individual_sample=4
+  - horizontal_integration_of_rna_across_multiple_samples=16
+  - horizontal_integration_of_atac_across_multiple_samples=16
+  - vertical_integration_of_multiple_harmonized_samples=16
+  - vertical_integration_of_multiple_anchored_samples=16
+  - html_report_of_multiple_samples=4
+
+set-resources:
+  - prep_library_file:mem_mb=1000
+  - prep_library_file:runtime=240
+
+  - cellranger_arc_count:slurm_partition=himem
+  - cellranger_arc_count:mem_mb=32000
+  - cellranger_arc_count:runtime=2880
+
+  - initializaion_of_individual_sample:mem_mb=32000
+  - initializaion_of_individual_sample:runtime=1440
+
+  - vertical_integration_of_individual_sample:mem_mb=32000
+  - vertical_integration_of_individual_sample:runtime=1440
+
+  - extended_pre_grn_analyses_of_individual_sample:mem_mb=32000
+  - extended_pre_grn_analyses_of_individual_sample:runtime=1440
+
+  - grn_analyses_of_individual_sample:slurm_partition=himem
+  - grn_analyses_of_individual_sample:mem_mb=32000
+  - grn_analyses_of_individual_sample:runtime=2880
+
+  - html_report_of_individual_sample:mem_mb=12000
+  - html_report_of_individual_sample:runtime=720
+
+  - horizontal_integration_of_rna_across_multiple_samples:slurm_partition=himem
+  - horizontal_integration_of_rna_across_multiple_samples:mem_mb=32000
+  - horizontal_integration_of_rna_across_multiple_samples:runtime=2880
+
+  - horizontal_integration_of_atac_across_multiple_samples:slurm_partition=himem
+  - horizontal_integration_of_atac_across_multiple_samples:mem_mb=32000
+  - horizontal_integration_of_atac_across_multiple_samples:runtime=2880
+
+  - vertical_integration_of_multiple_harmonized_samples:slurm_partition=himem
+  - vertical_integration_of_multiple_harmonized_samples:mem_mb=32000
+  - vertical_integration_of_multiple_harmonized_samples:runtime=2880
+
+  - vertical_integration_of_multiple_anchored_samples:slurm_partition=himem
+  - vertical_integration_of_multiple_anchored_samples:mem_mb=32000
+  - vertical_integration_of_multiple_anchored_samples:runtime=2880
+
+  - html_report_of_multiple_samples:mem_mb=16000
+  - html_report_of_multiple_samples:runtime=720

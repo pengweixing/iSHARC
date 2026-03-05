@@ -43,6 +43,12 @@ mamba activate isharc-snakemake
 
 If you already have an environment, install the same packages into that environment instead.
 
+Alternatively, if Snakemake is already installed in your environment, install the SLURM executor plugin with pip:
+
+```bash
+pip install snakemake-executor-plugin-slurm
+```
+
 ### Configure the input files
 
 The repository provides example templates under `test/`:
@@ -200,20 +206,24 @@ A minimal SLURM submission looks like this:
 #SBATCH -e isharc_%j.err
 
 SNAKEFILE="/path/to/iSHARC/workflow/Snakefile"
-CODE_ROOT="$(cd "$(dirname "$SNAKEFILE")/../.." && pwd)"
+PIPE_DIR="$(cd "$(dirname "$SNAKEFILE")/.." && pwd)"
+PROFILE="$PIPE_DIR/workflow/profiles/slurm"
+SNAKEMAKE_BIN="snakemake"
 REFDATA_DIR="/path/to/refdata-cellranger-arc-GRCh38-2024-A"
 RAWDATA_DIR="/path/to/raw_data"
+CONTAINERS_DIR="/path/to/iSHARC/containers"
 
 cd /path/to/workdir
 
-snakemake \
+"$SNAKEMAKE_BIN" \
+  --profile "$PROFILE" \
   --snakefile "$SNAKEFILE" \
   --configfile /path/to/config.yaml \
-  --config "pipe_dir=$CODE_ROOT/iSHARC" \
+  --config "pipe_dir=$PIPE_DIR" "containers_dir=$CONTAINERS_DIR" \
   --use-singularity \
-  --singularity-args "--bind $CODE_ROOT --bind $RAWDATA_DIR --bind $REFDATA_DIR" \
+  --singularity-args "--bind $PIPE_DIR --bind $RAWDATA_DIR --bind $REFDATA_DIR --bind $CONTAINERS_DIR" \
   --rerun-triggers mtime \
-  --cores 12
+  --jobs 20
 ```
 
 To submit it:
@@ -230,25 +240,25 @@ bash /path/to/iSHARC/workflow/scripts/download_containers.sh /path/to/iSHARC/con
 
 Then set `containers_dir` in your config YAML to that directory. The workflow will automatically use these local `.sif` images when present, and only fall back to `docker://...` when the local image is missing.
 
-To submit each rule as a separate SLURM job with the current template style, use Snakemake's SLURM executor:
+To submit each rule as a separate SLURM job with Snakemake 9, use a SLURM profile:
 
 ```bash
 snakemake \
+  --profile /path/to/iSHARC/workflow/profiles/slurm \
   --snakefile /path/to/iSHARC/workflow/Snakefile \
   --configfile /path/to/config.yaml \
   --config "pipe_dir=$CODE_ROOT/iSHARC" \
   --use-singularity \
   --singularity-args "--bind $CODE_ROOT --bind $RAWDATA_DIR --bind $REFDATA_DIR" \
   --rerun-triggers mtime \
-  --executor slurm \
-  --jobs 20 \
-  --default-resources mem_mb=32000 runtime=1440
+  --jobs 20
 ```
 
 In this mode:
 
 - `--jobs 20` controls how many SLURM jobs Snakemake may submit in parallel
-- `--default-resources` provides fallback memory/runtime requests for rules without explicit resource declarations
+- `--profile` loads SLURM executor settings and per-rule resources from [workflow/profiles/slurm/config.yaml](./workflow/profiles/slurm/config.yaml)
+- `runtime` in Snakemake resources uses integer minutes (for example, `48:00:00` becomes `2880`)
 - install `snakemake-executor-plugin-slurm` in the active environment, otherwise `--executor slurm` will not be available
 - `--use-singularity` and `--singularity-args` are still needed because the workflow uses containerized rules
 - `CODE_ROOT` should be the repository root, and `REFDATA_DIR` should point to your Cell Ranger ARC reference directory

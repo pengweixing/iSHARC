@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #SBATCH -p all
 #SBATCH -t 5-00:00:00
-#SBATCH --mem=60G
-#SBATCH -c 12
+#SBATCH --mem=6G
+#SBATCH -c 1
 #SBATCH -N 1
 #SBATCH -J isharc
 #SBATCH -o isharc_%j.out
@@ -19,6 +19,10 @@ WORKDIR="/path/to/workdir"
 REFDATA_DIR="/path/to/refdata-cellranger-arc-GRCh38-2024-A"
 RAWDATA_DIR="/path/to/raw_data"
 CONTAINERS_DIR="/home/pengwei/Desktop/Projects/isharc/code/iSHARC/containers"
+SNAKEMAKE_BIN="snakemake"
+# Optional: set an explicit Snakemake profile path. Leave empty to use
+# "$PIPE_DIR/workflow/profiles/slurm".
+PROFILE="${PROFILE:-}"
 
 # Number of rule-level jobs Snakemake can submit to Slurm.
 JOBS=20
@@ -26,31 +30,29 @@ JOBS=20
 UNLOCK_FIRST=false
 
 PIPE_DIR="$(cd "$(dirname "$SNAKEFILE")/.." && pwd)"
-
-# If Snakemake is not already available in your job environment, uncomment:
-# source ~/miniconda3/etc/profile.d/conda.sh
-# conda activate iSHARC
+if [[ -z "${PROFILE:-}" ]]; then
+  PROFILE="$PIPE_DIR/workflow/profiles/slurm"
+fi
 
 cd "$WORKDIR"
 mkdir -p logs_cluster
 
 if [[ "$UNLOCK_FIRST" == "true" ]]; then
-  snakemake \
+  "$SNAKEMAKE_BIN" \
     --snakefile "$SNAKEFILE" \
     --configfile "$CONFIGFILE" \
     --unlock
 fi
 
-snakemake \
+"$SNAKEMAKE_BIN" \
+  --profile "$PROFILE" \
   --snakefile "$SNAKEFILE" \
   --configfile "$CONFIGFILE" \
   --config "pipe_dir=$PIPE_DIR" "containers_dir=$CONTAINERS_DIR" \
   --use-singularity \
   --singularity-args "--bind $PIPE_DIR --bind $RAWDATA_DIR --bind $REFDATA_DIR --bind $CONTAINERS_DIR" \
   --rerun-triggers mtime \
-  --executor slurm \
-  --jobs "$JOBS" \
-  --default-resources mem_mb=32000 runtime=1440
+  --jobs "$JOBS"
 
 # If you activated conda above, uncomment:
 # conda deactivate

@@ -199,8 +199,8 @@ A minimal SLURM submission looks like this:
 #!/bin/bash
 #SBATCH -p all
 #SBATCH -t 5-00:00:00
-#SBATCH --mem=60G
-#SBATCH -c 12
+#SBATCH --mem=6G
+#SBATCH -c 1
 #SBATCH -J isharc
 #SBATCH -o isharc_%j.out
 #SBATCH -e isharc_%j.err

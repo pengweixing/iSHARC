@@ -18,6 +18,7 @@ CONFIGFILE="/path/to/config.yaml"
 WORKDIR="/path/to/workdir"
 REFDATA_DIR="/path/to/refdata-cellranger-arc-GRCh38-2024-A"
 RAWDATA_DIR="/path/to/raw_data"
+CONTAINERS_DIR="/home/pengwei/Desktop/Projects/isharc/code/iSHARC/containers"
 
 # Number of rule-level jobs Snakemake can submit to Slurm.
 JOBS=20
@@ -25,7 +26,6 @@ JOBS=20
 UNLOCK_FIRST=false
 
 PIPE_DIR="$(cd "$(dirname "$SNAKEFILE")/.." && pwd)"
-CLUSTER_CONFIG="$PIPE_DIR/workflow/config/cluster_config.yaml"
 
 # If Snakemake is not already available in your job environment, uncomment:
 # source ~/miniconda3/etc/profile.d/conda.sh
@@ -44,13 +44,13 @@ fi
 snakemake \
   --snakefile "$SNAKEFILE" \
   --configfile "$CONFIGFILE" \
-  --config "pipe_dir=$PIPE_DIR" \
+  --config "pipe_dir=$PIPE_DIR" "containers_dir=$CONTAINERS_DIR" \
   --use-singularity \
-  --singularity-args "--bind $PIPE_DIR --bind $RAWDATA_DIR --bind $REFDATA_DIR" \
+  --singularity-args "--bind $PIPE_DIR --bind $RAWDATA_DIR --bind $REFDATA_DIR --bind $CONTAINERS_DIR" \
   --rerun-triggers mtime \
-  --cluster-config "$CLUSTER_CONFIG" \
+  --executor slurm \
   --jobs "$JOBS" \
-  --cluster "sbatch -p {cluster.partition} -c {cluster.cpus} --mem={cluster.mem} -t {cluster.time} -J {cluster.job_name} -o {cluster.stdout} -e {cluster.stderr}"
+  --default-resources mem_mb=32000 runtime=1440
 
 # If you activated conda above, uncomment:
 # conda deactivate

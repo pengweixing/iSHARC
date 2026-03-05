@@ -32,6 +32,17 @@ tar -xzf v1.2.0.tar.gz
 conda install conda-forge::singularity
 ```
 
+### Install Snakemake for the current SLURM template
+
+The provided `sbatch_Snakefile_template.sh` uses Snakemake's modern SLURM executor (`--executor slurm`), which requires Snakemake 8+ and the SLURM executor plugin.
+
+```bash
+mamba create -n isharc-snakemake -c conda-forge snakemake=9.16.3 snakemake-executor-plugin-slurm
+mamba activate isharc-snakemake
+```
+
+If you already have an environment, install the same packages into that environment instead.
+
 ### Configure the input files
 
 The repository provides example templates under `test/`:
@@ -174,7 +185,7 @@ Before submission, make sure you have:
 
 The repository includes a submission template:
 
-- [workflow/sbatch_Snakefile_template.sh](./workflow/sbatch_Snakefile_template.sh)
+- [template/sbatch_Snakefile_template.sh](./template/sbatch_Snakefile_template.sh)
 
 A minimal SLURM submission looks like this:
 
@@ -219,7 +230,7 @@ bash /path/to/iSHARC/workflow/scripts/download_containers.sh /path/to/iSHARC/con
 
 Then set `containers_dir` in your config YAML to that directory. The workflow will automatically use these local `.sif` images when present, and only fall back to `docker://...` when the local image is missing.
 
-If you want Snakemake to submit each sub-job to SLURM separately, you can use a cluster configuration file such as [workflow/config/cluster_config.yaml](./workflow/config/cluster_config.yaml). A complete command looks like this:
+To submit each rule as a separate SLURM job with the current template style, use Snakemake's SLURM executor:
 
 ```bash
 snakemake \
@@ -229,15 +240,16 @@ snakemake \
   --use-singularity \
   --singularity-args "--bind $CODE_ROOT --bind $RAWDATA_DIR --bind $REFDATA_DIR" \
   --rerun-triggers mtime \
-  --cluster-config /path/to/iSHARC/workflow/config/cluster_config.yaml \
+  --executor slurm \
   --jobs 20 \
-  --cluster "sbatch -p {cluster.partition} -c {cluster.cpus} --mem={cluster.mem} -t {cluster.time} -J {cluster.job_name} -o {cluster.stdout} -e {cluster.stderr}"
+  --default-resources mem_mb=32000 runtime=1440
 ```
 
 In this mode:
 
 - `--jobs 20` controls how many SLURM jobs Snakemake may submit in parallel
-- CPU, memory, runtime, partition, and log naming are defined per rule in `cluster_config.yaml`
+- `--default-resources` provides fallback memory/runtime requests for rules without explicit resource declarations
+- install `snakemake-executor-plugin-slurm` in the active environment, otherwise `--executor slurm` will not be available
 - `--use-singularity` and `--singularity-args` are still needed because the workflow uses containerized rules
 - `CODE_ROOT` should be the repository root, and `REFDATA_DIR` should point to your Cell Ranger ARC reference directory
 
